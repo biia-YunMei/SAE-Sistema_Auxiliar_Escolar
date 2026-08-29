@@ -321,6 +321,7 @@
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/script.js"></script>
+    <script src="js/api.js"></script>
     <script>
       ;(function () {
         'use strict'
@@ -542,7 +543,12 @@
 
         busca.addEventListener('input', render)
 
+        window.saeCoordenacaoUI = {
+          setNotices(items) { comunicados = items; render() },
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
+          if (!saeRequireLogin()) return
           setDataAtual()
           const hoje = new Date().toISOString().split('T')[0]
           document.getElementById('comData').setAttribute('min', hoje)
@@ -550,7 +556,8 @@
           document.getElementById('editComData').setAttribute('min', hoje)
 
           // Dados de exemplo
-          if (comunicados.length === 0) {
+          /* Comunicados ainda serão persistidos quando o endpoint de comunicados for ativado. */
+          /* if (comunicados.length === 0) {
             const turmasExemplo = [
               ['6º A', '6º B'],
               ['7º A'],
@@ -579,11 +586,44 @@
                 data: d.toISOString().split('T')[0],
               })
             }
-          }
+          } */
 
           initTurmas()
           render()
         })
+      })()
+    </script>
+    <script>
+      ;(function () {
+        'use strict'
+        if (!saeRequireLogin()) return
+        let classes = []
+        async function loadNotices() {
+          try {
+            classes = (await saeRequest('/classes')).items || []
+            const data = await saeRequest('/notices')
+            const grouped = new Map()
+            ;(data.items || []).forEach((notice) => {
+              const key = `${notice.title}|${notice.content}|${notice.created_at}`
+              const item = grouped.get(key) || { id: notice.id, turmas: [], titulo: notice.title, mensagem: notice.content, data: notice.created_at.slice(0, 10) }
+              item.turmas.push(notice.class_name || 'Todas'); grouped.set(key, item)
+            })
+            window.saeCoordenacaoUI.setNotices([...grouped.values()])
+          } catch (error) { showToast(error.message, 'danger') }
+        }
+        document.getElementById('formComunicado').addEventListener('submit', async (event) => {
+          event.preventDefault(); event.stopImmediatePropagation()
+          const nomes = getTurmasSelecionadas('turmasComunicado')
+          const title = document.getElementById('comTitulo').value.trim()
+          const content = document.getElementById('comMensagem').value.trim()
+          const selected = classes.filter((item) => nomes.includes(item.name))
+          if (!title || !content || !selected.length) return showToast('Selecione uma turma cadastrada e preencha os campos.', 'warning')
+          try {
+            await Promise.all(selected.map((item) => saeRequest('/notices', { method: 'POST', body: JSON.stringify({ class_id: item.id, title, content }) })))
+            event.target.reset(); gerarSelectorTurmas('turmasComunicado'); await loadNotices(); showToast('Comunicado enviado!', 'success')
+          } catch (error) { showToast(error.message, 'danger') }
+        }, true)
+        window.addEventListener('load', () => setTimeout(loadNotices, 0))
       })()
     </script>
   </body>
