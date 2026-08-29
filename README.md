@@ -18,7 +18,7 @@ Sistema de gestão de tarefas e comunicados para professores, alunos e coordena�
 3. Entre com um usuário já criado. No primeiro uso, com o servidor ligado, crie o coordenador pelo terminal:
 
    ```bash
-   sae -ca -n "Nome" -p "+5566997213036" -s "sua-senha"
+   sae -ca -n "Nome" -p "+5566999999999" -s "sua-senha"
    ```
 
 O front-end se comunica com `http://127.0.0.1:8080/api`. O token de login é salvo somente no navegador usado.
