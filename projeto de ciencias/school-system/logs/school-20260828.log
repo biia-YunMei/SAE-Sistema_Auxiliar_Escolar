@@ -1,0 +1,57 @@
+[2026-08-28 20:33:14] [INFO] [main.c:80] === School Backend iniciando ===
+[2026-08-28 20:33:14] [INFO] [main.c:81] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-28 20:33:14] [INFO] [database.c:118] Schema versão atual: 0
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #1
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #2
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #3
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #4
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #5
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #6
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #7
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #8
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #9
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #10
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #11
+[2026-08-28 20:33:14] [INFO] [database.c:262] Aplicando migration #12
+[2026-08-28 20:33:14] [INFO] [database.c:300] Banco inicializado em data/school.db
+[2026-08-28 20:33:14] [INFO] [whatsapp.c:20] whatsapp: módulo inicializado
+[2026-08-28 20:33:14] [INFO] [main.c:103] Rotas registradas: 13
+[2026-08-28 20:33:14] [INFO] [server.c:268] HTTP server escutando em 0.0.0.0:8080
+[2026-08-28 20:36:32] [INFO] [server.c:220] GET /api/health body=0
+[2026-08-28 20:43:00] [INFO] [main.c:107] === School Backend finalizando ===
+[2026-08-28 20:56:33] [INFO] [main.c:143] === School Backend iniciando ===
+[2026-08-28 20:56:33] [INFO] [main.c:144] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-28 20:56:33] [INFO] [database.c:118] Schema versão atual: 1
+[2026-08-28 20:56:33] [INFO] [database.c:262] Aplicando migration #2
+[2026-08-28 20:56:33] [ERROR] [database.c:296] Falha em migrations
+[2026-08-28 20:56:33] [ERROR] [main.c:152] Falha ao inicializar banco
+[2026-08-28 20:58:27] [INFO] [main.c:143] === School Backend iniciando ===
+[2026-08-28 20:58:27] [INFO] [main.c:144] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-28 20:58:27] [INFO] [database.c:118] Schema versão atual: 1
+[2026-08-28 20:58:27] [INFO] [database.c:266] Aplicando migration #2
+[2026-08-28 20:58:27] [ERROR] [database.c:277] Nao foi possivel registrar migration #2: UNIQUE constraint failed: schema_version.version
+[2026-08-28 20:58:27] [ERROR] [database.c:308] Falha em migrations
+[2026-08-28 20:58:27] [ERROR] [main.c:152] Falha ao inicializar banco
+[2026-08-28 20:59:24] [INFO] [main.c:143] === School Backend iniciando ===
+[2026-08-28 20:59:24] [INFO] [main.c:144] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-28 20:59:24] [INFO] [database.c:118] Schema versão atual: 12
+[2026-08-28 20:59:24] [INFO] [database.c:312] Banco inicializado em data/school.db
+[2026-08-28 20:59:24] [INFO] [whatsapp.c:20] whatsapp: módulo inicializado
+[2026-08-28 20:59:24] [INFO] [main.c:194] Rotas registradas: 13
+[2026-08-28 20:59:24] [INFO] [server.c:268] HTTP server escutando em 0.0.0.0:8080
+[2026-08-28 21:07:45] [INFO] [server.c:220] GET /api/health body=0
+[2026-08-28 21:08:00] [INFO] [main.c:198] === School Backend finalizando ===
+[2026-08-28 21:16:37] [INFO] [main.c:143] === School Backend iniciando ===
+[2026-08-28 21:16:37] [INFO] [main.c:144] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-28 21:16:37] [INFO] [database.c:118] Schema versão atual: 12
+[2026-08-28 21:16:37] [INFO] [database.c:312] Banco inicializado em data/school.db
+[2026-08-28 21:52:34] [INFO] [main.c:85] === School Backend iniciando ===
+[2026-08-28 21:52:34] [INFO] [main.c:86] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-28 21:52:34] [INFO] [database.c:118] Schema versão atual: 12
+[2026-08-28 21:52:34] [INFO] [database.c:312] Banco inicializado em data/school.db
+[2026-08-28 21:52:34] [INFO] [whatsapp.c:20] whatsapp: módulo inicializado
+[2026-08-28 21:52:34] [INFO] [main.c:108] Rotas registradas: 14
+[2026-08-28 21:52:34] [INFO] [server.c:268] HTTP server escutando em 0.0.0.0:8080
+[2026-08-28 21:55:02] [INFO] [server.c:220] POST /api/auth body=43
+[2026-08-28 21:55:53] [INFO] [server.c:220] POST /api/auth body=43
+[2026-08-28 22:03:52] [INFO] [main.c:112] === School Backend finalizando ===
