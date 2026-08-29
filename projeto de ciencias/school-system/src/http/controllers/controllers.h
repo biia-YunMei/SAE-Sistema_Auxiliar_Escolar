@@ -11,6 +11,8 @@
 
 int ctrl_auth_login        (const HttpRequest *req, HttpResponse *res);
 int ctrl_bootstrap_admin   (const HttpRequest *req, HttpResponse *res);
+int ctrl_notices_list      (const HttpRequest *req, HttpResponse *res);
+int ctrl_notices_create    (const HttpRequest *req, HttpResponse *res);
 
 int ctrl_users_create      (const HttpRequest *req, HttpResponse *res);
 int ctrl_users_list        (const HttpRequest *req, HttpResponse *res);

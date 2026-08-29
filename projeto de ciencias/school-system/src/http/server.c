@@ -180,6 +180,7 @@ static void send_response(int cfd, const HttpResponse *res)
         "Content-Length: %zu\r\n"
         "Connection: close\r\n"
         "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
         "Access-Control-Allow-Headers: Authorization, Content-Type\r\n"
         "\r\n",
         res->status,
@@ -216,6 +217,8 @@ static void *client_thread(void *arg)
 
     if (parse_request(c->cfd, &req) != 0) {
         http_respond_error(&res, 400, "bad request");
+    } else if (strcmp(req.method, "OPTIONS") == 0) {
+        http_respond_text(&res, 204, "");
     } else {
         log_info("%s %s body=%zu", req.method, req.path, req.body_len);
         /* router_dispatch_request é definido em router.c (mesma TU não dá,

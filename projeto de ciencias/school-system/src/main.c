@@ -49,6 +49,8 @@ static const Route g_routes[] = {
     { "GET",  "/api/health",                       ctrl_health             },
     { "POST", "/api/auth",                         ctrl_auth_login         },
     { "POST", "/api/bootstrap",                    ctrl_bootstrap_admin    },
+    { "GET",  "/api/notices",                      ctrl_notices_list       },
+    { "POST", "/api/notices",                      ctrl_notices_create     },
     { "POST", "/api/users",                        ctrl_users_create       },
     { "GET",  "/api/users",                        ctrl_users_list         },
 
