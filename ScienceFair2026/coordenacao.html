@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coordenação</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+    <style>
+      .espacamento-cards {
+        margin-top: 1.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- HEADER -->
+      <div
+        class="d-flex flex-wrap justify-content-between align-items-center mb-3"
+      >
+        <div><span class="header-brand">Coordenação</span></div>
+        <div class="d-flex align-items-center gap-3">
+          <span class="header-date text-secondary"
+            >Data: <span id="dataAtual"></span
+          ></span>
+          <button class="btn" id="themeToggle" title="Alternar tema">
+            <i class="bi bi-moon-fill" id="themeIcon"></i>
+            <span class="theme-label">Tema</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- MENU -->
+      <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+        <li class="nav-item">
+          <button
+            class="nav-link active"
+            id="tab-dashboard"
+            data-bs-toggle="tab"
+            data-bs-target="#page-dashboard"
+            type="button"
+            role="tab"
+          >
+            Visão geral
+          </button>
+        </li>
+        <li class="nav-item">
+          <button
+            class="nav-link"
+            id="tab-comunicados"
+            data-bs-toggle="tab"
+            data-bs-target="#page-comunicados"
+            type="button"
+            role="tab"
+          >
+            Comunicados
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content espacamento-cards" id="mainTabsContent">
+        <!-- VISÃO GERAL -->
+        <div
+          class="tab-pane fade show active"
+          id="page-dashboard"
+          role="tabpanel"
+        >
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <div class="stat-card">
+                <div class="stat-number" id="stat-comunicados">0</div>
+                <div class="stat-label">Comunicados enviados</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="stat-card">
+                <div class="stat-number" id="stat-turmas">0</div>
+                <div class="stat-label">Turmas com comunicados</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">Últimas atividades</div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-borderless table-hover mb-0">
+                  <thead>
+                    <tr>
+                      <th style="padding-left: 1.25rem">Ação</th>
+                      <th>Detalhe</th>
+                      <th>Data</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ultimas-atividades">
+                    <tr>
+                      <td colspan="3" class="text-center text-muted py-3">
+                        Nenhuma atividade registrada.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMUNICADOS -->
+        <div class="tab-pane fade" id="page-comunicados" role="tabpanel">
+          <div class="row g-4">
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header">Novo comunicado</div>
+                <div class="card-body">
+                  <form id="formComunicado" autocomplete="off">
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >Turmas <span class="text-danger">*</span></label
+                      >
+                      <div id="turmasComunicado" class="turma-selector"></div>
+                      <small class="text-muted"
+                        >Selecione o ano e marque A e/ou B.</small
+                      >
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >Título <span class="text-danger">*</span></label
+                      >
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="comTitulo"
+                        placeholder="Ex: Reunião de pais"
+                        required
+                      />
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >Mensagem <span class="text-danger">*</span></label
+                      >
+                      <textarea
+                        class="form-control"
+                        id="comMensagem"
+                        rows="3"
+                        placeholder="Conteúdo…"
+                        required
+                      ></textarea>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >Data <span class="text-danger">*</span></label
+                      >
+                      <div class="input-group input-group-date">
+                        <input
+                          type="date"
+                          class="form-control"
+                          id="comData"
+                          required
+                        />
+                        <span class="input-group-text"
+                          ><i class="bi bi-calendar3"></i
+                        ></span>
+                      </div>
+                    </div>
+                    <button type="submit" class="btn btn-teal w-100">
+                      Enviar comunicado
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-7">
+              <div class="card">
+                <div
+                  class="card-header d-flex justify-content-between align-items-center flex-wrap"
+                >
+                  <span>Comunicados enviados</span>
+                  <span class="badge badge-teal" id="totalComunicadosBadge"
+                    >0</span
+                  >
+                </div>
+                <div class="card-body">
+                  <input
+                    type="text"
+                    class="form-control mb-3"
+                    id="buscaComunicados"
+                    placeholder="Buscar por turma ou título..."
+                  />
+                  <div class="table-scroll">
+                    <table class="table table-hover">
+                      <thead>
+                        <tr>
+                          <th style="padding-left: 1.25rem">#</th>
+                          <th>Turmas</th>
+                          <th>Título</th>
+                          <th>Data</th>
+                          <th class="acoes-col" style="width: 120px">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tabelaComunicados"></tbody>
+                    </table>
+                  </div>
+                  <div
+                    id="emptyComunicados"
+                    class="text-muted text-center py-4"
+                  >
+                    Nenhum comunicado encontrado.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- MODAIS (Ver/Editar) -->
+    <!-- Ver Mensagem -->
+    <div
+      class="modal fade"
+      id="modalVerMensagem"
+      tabindex="-1"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalVerMensagemTitulo">Mensagem</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body" id="modalVerMensagemConteudo"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-teal" data-bs-dismiss="modal">
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Editar Comunicado -->
+    <div
+      class="modal fade"
+      id="modalEditarComunicado"
+      tabindex="-1"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar comunicado</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="formEditarComunicado">
+              <input type="hidden" id="editComId" />
+              <div class="mb-3">
+                <label class="form-label"
+                  >Turmas <span class="text-danger">*</span></label
+                >
+                <div id="editTurmasComunicado" class="turma-selector"></div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label"
+                  >Título <span class="text-danger">*</span></label
+                ><input
+                  type="text"
+                  class="form-control"
+                  id="editComTitulo"
+                  required
+                />
+              </div>
+              <div class="mb-3">
+                <label class="form-label"
+                  >Mensagem <span class="text-danger">*</span></label
+                ><textarea
+                  class="form-control"
+                  id="editComMensagem"
+                  rows="3"
+                  required
+                ></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label"
+                  >Data <span class="text-danger">*</span></label
+                >
+                <div class="input-group input-group-date">
+                  <input
+                    type="date"
+                    class="form-control"
+                    id="editComData"
+                    required
+                  /><span class="input-group-text"
+                    ><i class="bi bi-calendar3"></i
+                  ></span>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-teal w-100">Salvar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/script.js"></script>
+    <script>
+      ;(function () {
+        'use strict'
+
+        let comunicados = []
+        let idCounter = 1
+
+        const tabela = document.getElementById('tabelaComunicados')
+        const empty = document.getElementById('emptyComunicados')
+        const totalBadge = document.getElementById('totalComunicadosBadge')
+        const busca = document.getElementById('buscaComunicados')
+        const statCom = document.getElementById('stat-comunicados')
+        const statTurmas = document.getElementById('stat-turmas')
+        const ultimas = document.getElementById('ultimas-atividades')
+        const form = document.getElementById('formComunicado')
+        const dataAtual = document.getElementById('dataAtual')
+
+        const modalVer = new bootstrap.Modal(
+          document.getElementById('modalVerMensagem'),
+        )
+        const modalEditar = new bootstrap.Modal(
+          document.getElementById('modalEditarComunicado'),
+        )
+
+        function initTurmas() {
+          initTurmaSelector('turmasComunicado')
+          initTurmaSelector('editTurmasComunicado')
+        }
+
+        function setDataAtual() {
+          const now = new Date()
+          dataAtual.textContent = now.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          })
+        }
+
+        function contarTurmasUnicas(comunicados) {
+          const anos = new Set()
+          comunicados.forEach((c) => {
+            c.turmas.forEach((t) => {
+              const ano = t.split(' ')[0] // pega o ano (ex: "9º")
+              if (ano) anos.add(ano)
+            })
+          })
+          return anos.size
+        }
+
+        function render() {
+          const filtro = busca.value.toLowerCase().trim()
+          const lista = [...comunicados].sort((a, b) =>
+            b.data.localeCompare(a.data),
+          )
+          const filtrados = lista.filter(
+            (c) =>
+              c.titulo.toLowerCase().includes(filtro) ||
+              c.turmas.some((t) => t.toLowerCase().includes(filtro)),
+          )
+
+          const html = filtrados
+            .map(
+              (c, idx) => `
+          <tr>
+            <td style="padding-left:1.25rem">${idx + 1}</td>
+            <td><span class="badge badge-teal">${formatarTurmas(c.turmas)}</span></td>
+            <td>${c.titulo}</td>
+            <td>${formatDate(c.data)}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                <button class="btn-circle-sm btn-view" onclick="verMensagem(${c.id})"><i class="bi bi-eye-fill"></i></button>
+                <button class="btn-circle-sm btn-edit" onclick="editarComunicado(${c.id})"><i class="bi bi-pencil-fill"></i></button>
+                <button class="btn-circle-sm btn-danger" onclick="excluirComunicado(${c.id})"><i class="bi bi-trash3-fill"></i></button>
+              </div>
+            </td>
+          </tr>
+        `,
+            )
+            .join('')
+
+          tabela.innerHTML = html || ''
+          empty.style.display = filtrados.length ? 'none' : 'block'
+          totalBadge.textContent = comunicados.length
+          statCom.textContent = comunicados.length
+          statTurmas.textContent = contarTurmasUnicas(comunicados)
+          atualizarDashboard()
+        }
+
+        function atualizarDashboard() {
+          const items = comunicados.map((c) => ({
+            tipo: 'comunicado',
+            desc: `Comunicado “${c.titulo}” para ${formatarTurmas(c.turmas)}`,
+            data: formatDate(c.data),
+          }))
+          const recentes = items.slice(-5).reverse()
+          if (recentes.length === 0) {
+            ultimas.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Nenhuma atividade registrada.</td></tr>`
+            return
+          }
+          ultimas.innerHTML = recentes
+            .map(
+              (item) => `
+          <tr>
+            <td style="padding-left:1.25rem"><span class="badge badge-teal">Comunicado</span></td>
+            <td>${item.desc}</td>
+            <td class="text-muted small">${item.data}</td>
+          </tr>
+        `,
+            )
+            .join('')
+        }
+
+        window.excluirComunicado = function (id) {
+          if (!confirm('Deseja excluir este comunicado?')) return
+          comunicados = comunicados.filter((c) => c.id !== id)
+          render()
+          showToast('Comunicado excluído!', 'danger')
+        }
+
+        window.verMensagem = function (id) {
+          const c = comunicados.find((com) => com.id === id)
+          if (!c) return
+          document.getElementById('modalVerMensagemTitulo').textContent =
+            c.titulo
+          document.getElementById('modalVerMensagemConteudo').innerHTML = `
+          <p><strong>Turmas:</strong> ${formatarTurmas(c.turmas)}</p>
+          <p><strong>Data:</strong> ${formatDate(c.data)}</p>
+          <hr><p style="white-space:pre-wrap;">${c.mensagem}</p>
+        `
+          modalVer.show()
+        }
+
+        window.editarComunicado = function (id) {
+          const c = comunicados.find((com) => com.id === id)
+          if (!c) return
+          document.getElementById('editComId').value = c.id
+          document.getElementById('editComTitulo').value = c.titulo
+          document.getElementById('editComMensagem').value = c.mensagem
+          document.getElementById('editComData').value = c.data
+          // Preencher o seletor
+          if (c.turmas.length > 0) {
+            const primeira = c.turmas[0]
+            const parts = primeira.split(' ')
+            const ano = parts[0]
+            const letras = c.turmas.map((t) => t.split(' ')[1]).filter(Boolean)
+            // Remover duplicatas
+            const letrasUnicas = [...new Set(letras)]
+            // Gerar o seletor com esses valores
+            gerarSelectorTurmas('editTurmasComunicado', ano, letrasUnicas)
+          } else {
+            gerarSelectorTurmas('editTurmasComunicado')
+          }
+          modalEditar.show()
+        }
+
+        document
+          .getElementById('formEditarComunicado')
+          .addEventListener('submit', function (e) {
+            e.preventDefault()
+            const id = parseInt(document.getElementById('editComId').value)
+            const turmas = getTurmasSelecionadas('editTurmasComunicado')
+            const titulo = document.getElementById('editComTitulo').value.trim()
+            const mensagem = document
+              .getElementById('editComMensagem')
+              .value.trim()
+            const data = document.getElementById('editComData').value
+            if (!turmas.length || !titulo || !mensagem || !data) {
+              showToast(
+                'Preencha todos os campos e selecione turmas.',
+                'warning',
+              )
+              return
+            }
+            const hoje = new Date().toISOString().split('T')[0]
+            if (data < hoje) {
+              showToast('Data não pode ser anterior a hoje.', 'warning')
+              return
+            }
+            const idx = comunicados.findIndex((c) => c.id === id)
+            if (idx !== -1) {
+              comunicados[idx].turmas = turmas
+              comunicados[idx].titulo = titulo
+              comunicados[idx].mensagem = mensagem
+              comunicados[idx].data = data
+            }
+            modalEditar.hide()
+            render()
+            showToast('Comunicado atualizado!', 'success')
+          })
+
+        form.addEventListener('submit', function (e) {
+          e.preventDefault()
+          const turmas = getTurmasSelecionadas('turmasComunicado')
+          const titulo = document.getElementById('comTitulo').value.trim()
+          const mensagem = document.getElementById('comMensagem').value.trim()
+          const data = document.getElementById('comData').value
+          if (!turmas.length || !titulo || !mensagem || !data) {
+            showToast('Preencha todos os campos e selecione turmas.', 'warning')
+            return
+          }
+          const hoje = new Date().toISOString().split('T')[0]
+          if (data < hoje) {
+            showToast('Data não pode ser anterior a hoje.', 'warning')
+            return
+          }
+          comunicados.push({
+            id: idCounter++,
+            turmas: turmas,
+            titulo,
+            mensagem,
+            data,
+          })
+          form.reset()
+          // Resetar seletor
+          gerarSelectorTurmas('turmasComunicado')
+          render()
+          showToast('Comunicado enviado!', 'success')
+        })
+
+        busca.addEventListener('input', render)
+
+        document.addEventListener('DOMContentLoaded', function () {
+          setDataAtual()
+          const hoje = new Date().toISOString().split('T')[0]
+          document.getElementById('comData').setAttribute('min', hoje)
+          document.getElementById('comData').value = hoje
+          document.getElementById('editComData').setAttribute('min', hoje)
+
+          // Dados de exemplo
+          if (comunicados.length === 0) {
+            const turmasExemplo = [
+              ['6º A', '6º B'],
+              ['7º A'],
+              ['8º A', '8º B'],
+              ['9º A'],
+              ['1º EM A', '1º EM B'],
+              ['2º EM A'],
+              ['3º EM A', '3º EM B'],
+            ]
+            const titulos = [
+              'Reunião de pais',
+              'Prova final',
+              'Festa junina',
+              'Entrega de notas',
+              'Plantão de dúvidas',
+              'Visita técnica',
+            ]
+            for (let i = 0; i < 6; i++) {
+              const d = new Date()
+              d.setDate(d.getDate() + i)
+              comunicados.push({
+                id: idCounter++,
+                turmas: turmasExemplo[i % turmasExemplo.length],
+                titulo: titulos[i % titulos.length],
+                mensagem: `Detalhes do comunicado: ${titulos[i % titulos.length]}`,
+                data: d.toISOString().split('T')[0],
+              })
+            }
+          }
+
+          initTurmas()
+          render()
+        })
+      })()
+    </script>
+  </body>
+</html>

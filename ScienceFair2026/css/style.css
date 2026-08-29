@@ -1,0 +1,446 @@
+/* ─── VARIÁVEIS DE TEMA (TEAL) ─── */
+:root {
+  --teal-50: #f0fdfa;
+  --teal-100: #ccfbf1;
+  --teal-200: #99f6e4;
+  --teal-300: #5eead4;
+  --teal-400: #2dd4bf;
+  --teal-500: #14b8a6;
+  --teal-600: #0d9488;
+  --teal-700: #0f766e;
+  --teal-800: #115e59;
+  --teal-900: #134e4a;
+}
+
+body {
+  padding-top: 1.5rem;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.header-brand {
+  font-weight: 700;
+  font-size: 1.6rem;
+}
+.header-date {
+  font-size: 0.9rem;
+}
+
+/* ─── ABAS ─── */
+.nav-tabs .nav-link {
+  font-weight: 500;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 0.6rem 1.2rem;
+  margin-right: 0.25rem;
+  color: var(--bs-body-color);
+}
+.nav-tabs .nav-link:hover {
+  border-color: var(--teal-300);
+  color: var(--bs-body-color);
+}
+.nav-tabs .nav-link.active {
+  color: var(--teal-700);
+  border-color: var(--teal-600);
+  background: transparent;
+}
+[data-bs-theme='dark'] .nav-tabs .nav-link.active {
+  color: var(--teal-300);
+  border-color: var(--teal-400);
+}
+
+/* Espaçamento entre menu e conteúdo */
+.tab-content {
+  margin-top: 1.8rem;
+}
+
+/* ─── CARDS ─── */
+.card {
+  border: none;
+  border-radius: 1rem;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.04),
+    0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 0.2s;
+}
+.card:hover {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06);
+}
+.card-header {
+  border-bottom: 1px solid var(--bs-border-color);
+  padding: 1rem 1.25rem;
+  font-weight: 600;
+}
+
+/* ─── BOTÃO TEAL ─── */
+.btn-teal {
+  background-color: var(--teal-600);
+  border-color: var(--teal-600);
+  color: #fff;
+}
+.btn-teal:hover {
+  background-color: var(--teal-700);
+  border-color: var(--teal-700);
+  color: #fff;
+}
+
+/* ─── BADGE TEAL ─── */
+.badge-teal {
+  background-color: var(--teal-100);
+  color: var(--teal-800);
+}
+[data-bs-theme='dark'] .badge-teal {
+  background-color: var(--teal-900);
+  color: var(--teal-200);
+}
+
+/* ─── SCROLL DA TABELA ─── */
+.table-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.table-scroll table {
+  margin-bottom: 0;
+}
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bs-body-bg);
+  z-index: 2;
+}
+
+/* ─── BOTÕES DE AÇÃO (CÍRCULOS) ─── */
+.btn-circle-sm {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  line-height: 1;
+  border: none;
+  background: var(--bs-tertiary-bg);
+  color: var(--bs-body-color);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.btn-circle-sm:hover {
+  background: var(--bs-secondary-bg);
+  color: var(--bs-body-color);
+}
+.btn-circle-sm.btn-view {
+  background: var(--bs-info-bg-subtle);
+  color: var(--bs-info-text-emphasis);
+}
+.btn-circle-sm.btn-view:hover {
+  opacity: 0.8;
+}
+.btn-circle-sm.btn-edit {
+  background: var(--bs-warning-bg-subtle);
+  color: var(--bs-warning-text-emphasis);
+}
+.btn-circle-sm.btn-edit:hover {
+  opacity: 0.8;
+}
+.btn-circle-sm.btn-danger {
+  background: var(--bs-danger-bg-subtle);
+  color: var(--bs-danger-text-emphasis);
+}
+.btn-circle-sm.btn-danger:hover {
+  opacity: 0.8;
+}
+.btn-group-sm .btn-circle-sm {
+  margin: 0 2px;
+}
+
+/* ─── ESTATÍSTICAS ─── */
+.stat-card {
+  border-left: 4px solid var(--teal-400);
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  height: 100%;
+  background: var(--bs-body-bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+.stat-card .stat-number {
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--bs-body-color);
+}
+.stat-card .stat-label {
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+  font-weight: 500;
+}
+
+/* ─── INPUT COM CALENDÁRIO ─── */
+.input-group-date {
+  position: relative;
+}
+.input-group-date .form-control {
+  padding-right: 2.5rem;
+}
+.input-group-date .input-group-text {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--bs-secondary-color);
+  pointer-events: none;
+  z-index: 5;
+  padding: 0 0.8rem;
+  font-size: 1.1rem;
+}
+input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: pointer;
+  background: transparent;
+  z-index: 6;
+}
+input[type='date']::-moz-calendar-picker-indicator {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: pointer;
+  background: transparent;
+  z-index: 6;
+}
+input[type='date']:not(:focus):not(:valid) {
+  color: var(--bs-secondary-color);
+}
+
+/* ─── SELETOR DE TURMA ─── */
+.turma-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+}
+.turma-selector .form-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.turma-selector .form-group label {
+  margin-bottom: 0;
+  font-weight: 500;
+}
+.turma-selector .form-check-inline {
+  margin-right: 0.5rem;
+}
+.turma-selector select {
+  width: auto;
+  min-width: 120px;
+}
+@media (max-width: 576px) {
+  .turma-selector {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .turma-selector .form-group {
+    flex-wrap: wrap;
+  }
+}
+/* ─── TOASTS ─── */
+.toast-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1050;
+  max-width: 350px;
+  width: 100%;
+}
+.toast {
+  border-radius: 0.75rem;
+  border-left: 5px solid var(--teal-600);
+}
+.toast.toast-success {
+  border-left-color: #198754;
+}
+.toast.toast-danger {
+  border-left-color: #dc3545;
+}
+.toast.toast-warning {
+  border-left-color: #ffc107;
+}
+.toast.toast-info {
+  border-left-color: var(--teal-600);
+}
+.toast .toast-body i {
+  font-size: 1.2rem;
+  margin-right: 0.5rem;
+}
+.toast-success .toast-body i {
+  color: #198754;
+}
+.toast-danger .toast-body i {
+  color: #dc3545;
+}
+.toast-warning .toast-body i {
+  color: #d97706;
+}
+.toast-info .toast-body i {
+  color: var(--teal-600);
+}
+[data-bs-theme='dark'] .toast-info .toast-body i {
+  color: var(--teal-300);
+}
+
+/* ─── BOTÃO DE TEMA ─── */
+#themeToggle {
+  background: transparent;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 2rem;
+  padding: 0.3rem 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--bs-body-color);
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+#themeToggle:hover {
+  background: var(--bs-tertiary-bg);
+  border-color: var(--bs-secondary-color);
+}
+#themeIcon {
+  font-size: 1.1rem;
+}
+.theme-label {
+  display: inline;
+}
+@media (max-width: 576px) {
+  .theme-label {
+    display: none;
+  }
+}
+
+/* ─── RESPONSIVIDADE ─── */
+@media (max-width: 768px) {
+  .stat-card .stat-number {
+    font-size: 1.4rem;
+  }
+  .nav-tabs .nav-link {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+  }
+  .header-brand {
+    font-size: 1.2rem;
+  }
+  .table-scroll {
+    max-height: 200px;
+  }
+  .table-responsive {
+    font-size: 0.85rem;
+  }
+  .table th,
+  .table td {
+    padding: 0.5rem 0.4rem;
+  }
+  .btn-circle-sm {
+    width: 26px;
+    height: 26px;
+    font-size: 0.7rem;
+  }
+  .btn-group-sm .btn-circle-sm {
+    margin: 0 1px;
+  }
+  .whatsapp-cell {
+    white-space: nowrap;
+  }
+  #ultimas-atividades td,
+  #ultimas-atividades th {
+    padding: 0.4rem 0.3rem;
+    font-size: 0.8rem;
+  }
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.3rem 0.5rem;
+  }
+  .table .acoes-col {
+    width: 80px;
+    min-width: 80px;
+  }
+  .input-group-date .input-group-text {
+    font-size: 1rem;
+    padding: 0 0.6rem;
+  }
+  .toast-container {
+    top: 0.5rem;
+    right: 0.5rem;
+    max-width: 300px;
+  }
+  .turma-select select[multiple] {
+    min-height: 80px;
+  }
+}
+@media (max-width: 576px) {
+  .header-brand {
+    font-size: 1.1rem;
+  }
+  .header-date {
+    font-size: 0.8rem;
+  }
+  .card-header {
+    font-size: 0.9rem;
+    padding: 0.6rem 0.8rem;
+  }
+  .card-body {
+    padding: 0.8rem;
+  }
+  .stat-card {
+    padding: 0.6rem 0.8rem;
+  }
+  .stat-card .stat-number {
+    font-size: 1.2rem;
+  }
+  .stat-card .stat-label {
+    font-size: 0.75rem;
+  }
+  .table th,
+  .table td {
+    padding: 0.4rem 0.3rem;
+    font-size: 0.75rem;
+  }
+  .btn-circle-sm {
+    width: 24px;
+    height: 24px;
+    font-size: 0.65rem;
+  }
+  .input-group-date .input-group-text {
+    font-size: 0.9rem;
+    padding: 0 0.4rem;
+  }
+  .toast-container {
+    top: 0.5rem;
+    right: 0.5rem;
+    max-width: 260px;
+  }
+  .toast {
+    font-size: 0.85rem;
+  }
+  .turma-select select[multiple] {
+    min-height: 70px;
+    font-size: 0.85rem;
+  }
+}
