@@ -1,29 +1,41 @@
-# Build artifacts
-build/
+# Arquivos gerados pela compilacao
+**/build/
 *.o
 *.obj
 *.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+compile_commands.json
 
-# Data
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
-data/media/*
+# Dados locais e sessoes
+**/data/*.db
+**/data/*.db-journal
+**/data/*.db-wal
+**/data/*.db-shm
+**/data/media/
+**/.sae-session
 
-# Logs
-logs/*.log
-logs/*.txt
+# Registros de execucao
+**/logs/
+*.log
 
-# Secrets
+# Credenciais e configuracoes particulares
 .env
+.env.*
+!.env.example
 config.local.ini
 *.key
 *.pem
+*.p12
+*.pfx
 
-# Editor
+# Arquivos de editores e do sistema operacional
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
+Thumbs.db
