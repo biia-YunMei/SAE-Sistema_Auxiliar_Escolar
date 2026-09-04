@@ -96,25 +96,6 @@ static const char *get_header_value(const char *raw_headers,
     return NULL;
 }
 
-static char *get_header_value_ptr(char *raw_headers, const char *name)
-{
-    size_t nlen = strlen(name);
-    char *p = raw_headers;
-    while (*p) {
-        if (strncasecmp(p, name, nlen) == 0 && p[nlen] == ':') {
-            p += nlen + 1;
-            while (*p == ' ' || *p == '\t') p++;
-            char *e = strstr(p, "\r\n");
-            if (e) *e = '\0';
-            return p;
-        }
-        char *e = strstr(p, "\r\n");
-        if (!e) break;
-        p = e + 2;
-    }
-    return NULL;
-}
-
 static int parse_request(int cfd, HttpRequest *out)
 {
     char *buf = (char *)malloc(MAX_HEADER + MAX_BODY + 1);
@@ -165,8 +146,14 @@ static int parse_request(int cfd, HttpRequest *out)
         out->body_len += (size_t)n;
     }
     body[out->body_len] = '\0';
-    char *h = get_header_value_ptr(line_end + 2, "Authorization");
-    out->auth = (h && strncasecmp(h, "Bearer ", 7) == 0) ? h + 7 : NULL;
+    const char *authorization = get_header_value(line_end + 2, "Authorization",
+                                                  out->auth_storage,
+                                                  sizeof out->auth_storage);
+    out->auth = (authorization && strncasecmp(authorization, "Bearer ", 7) == 0)
+        ? authorization + 7 : NULL;
+    out->webhook_signature = get_header_value(line_end + 2, "X-Hub-Signature-256",
+                                               out->webhook_signature_storage,
+                                               sizeof out->webhook_signature_storage);
     out->storage = buf;
     return 0;
 }
@@ -191,7 +178,8 @@ static void send_response(int cfd, const HttpResponse *res)
         res->status == 401 ? "Unauthorized" :
         res->status == 403 ? "Forbidden" :
         res->status == 404 ? "Not Found" :
-        res->status == 405 ? "Method Not Allowed" : "Error",
+        res->status == 405 ? "Method Not Allowed" :
+        res->status == 429 ? "Too Many Requests" : "Error",
         res->content_type ? res->content_type : "application/json",
         res->body_len);
     (void)send(cfd, head, (size_t)n, 0);

@@ -19,6 +19,9 @@
 #include <string.h>
 #include <ctype.h>
 
+static AppConfig g_current_config;
+static int g_config_loaded = 0;
+
 /* ---------- helpers internos -------------------------------------------- */
 
 static void copy_str(char *dst, size_t cap, const char *src, const char *defv)
@@ -103,6 +106,10 @@ int config_load(AppConfig *out)
     copy_str(out->whatsapp_api_url,   sizeof out->whatsapp_api_url,   getenv("WHATSAPP_API_URL"),       "");
     copy_str(out->whatsapp_api_token, sizeof out->whatsapp_api_token, getenv("WHATSAPP_API_TOKEN"),     "");
     copy_str(out->whatsapp_phone_id,  sizeof out->whatsapp_phone_id,  getenv("WHATSAPP_PHONE_NUMBER_ID"), "");
+    copy_str(out->whatsapp_verify_token, sizeof out->whatsapp_verify_token,
+             getenv("WHATSAPP_VERIFY_TOKEN"), "");
+    copy_str(out->whatsapp_app_secret, sizeof out->whatsapp_app_secret,
+             getenv("WHATSAPP_APP_SECRET"), "");
 
     copy_str(out->ai_api_url, sizeof out->ai_api_url, getenv("AI_API_URL"), "");
     copy_str(out->ai_api_key, sizeof out->ai_api_key, getenv("AI_API_KEY"), "");
@@ -116,10 +123,20 @@ int config_load(AppConfig *out)
     out->session_timeout_min= parse_int_env("SESSION_TIMEOUT_MIN", 60);
 
     /* Validação leve */
-    if (out->server_port <= 0 || out->server_port > 65535) {
+    if (out->server_port <= 0 || out->server_port > 65535 ||
+        out->max_message_size < 1 || out->max_message_size > 4096 ||
+        out->max_request_size < 1024 || out->max_request_size > 1048576 ||
+        out->session_timeout_min < 1 || out->session_timeout_min > 1440) {
         return ERROR_CONFIG;
     }
+    g_current_config = *out;
+    g_config_loaded = 1;
     return SUCCESS;
+}
+
+const AppConfig *config_current(void)
+{
+    return g_config_loaded ? &g_current_config : NULL;
 }
 
 const char *config_get_database_path(const AppConfig *cfg) { return cfg ? cfg->database_path : ""; }

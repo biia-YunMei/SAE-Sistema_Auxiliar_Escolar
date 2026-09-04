@@ -1,0 +1,8 @@
+[2026-08-31 17:42:24] [INFO] [main.c:89] === School Backend iniciando ===
+[2026-08-31 17:42:24] [INFO] [main.c:90] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-08-31 17:42:24] [INFO] [database.c:118] Schema versão atual: 12
+[2026-08-31 17:42:24] [INFO] [database.c:312] Banco inicializado em data/school.db
+[2026-08-31 17:42:24] [INFO] [whatsapp.c:30] whatsapp: módulo inicializado
+[2026-08-31 17:42:24] [INFO] [main.c:112] Rotas registradas: 18
+[2026-08-31 17:42:24] [INFO] [server.c:258] HTTP server escutando em 0.0.0.0:8080
+[2026-08-31 17:50:52] [INFO] [main.c:116] === School Backend finalizando ===

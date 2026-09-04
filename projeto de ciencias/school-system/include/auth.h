@@ -30,6 +30,9 @@ int auth_session_resolve(const char *token, AuthSession *out);
 /* Invalida sessão. */
 int auth_session_revoke(const char *token);
 
+/* Define a duracao das novas sessoes (1 a 1.440 minutos). */
+void auth_set_session_timeout(int minutes);
+
 void auth_shutdown(void);
 
 #endif /* SCHOOL_AUTH_H */

@@ -27,6 +27,8 @@ typedef struct {
     char  whatsapp_api_url[256];
     char  whatsapp_api_token[256];
     char  whatsapp_phone_id[64];
+    char  whatsapp_verify_token[128];
+    char  whatsapp_app_secret[256];
 
     /* IA (opcional) */
     char  ai_api_url[256];
@@ -46,6 +48,10 @@ typedef struct {
 /* Carrega do ambiente (e, se existir, do arquivo .env).
  * Retorna SUCCESS ou ERROR_CONFIG. */
 int  config_load(AppConfig *out);
+
+/* Configuração carregada na inicialização. Ela é somente leitura e
+ * permite que adaptadores não dependam de variáveis globais externas. */
+const AppConfig *config_current(void);
 
 /* Helpers para uso em logs (não expõem segredos). */
 const char *config_get_database_path(const AppConfig *cfg);

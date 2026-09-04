@@ -1,160 +1,215 @@
-/* auth.c
- * Autenticação por telefone com sessões em memória.
- *
- * Para uma feira de ciências, manter sessões em memória é aceitável.
- * Em produção, usar Redis/JWT assinado.
- */
+/* Autenticacao, sessao opaca e protecao basica contra tentativas repetidas. */
 #include "auth.h"
 #include "database.h"
 #include "users.h"
 #include "validation.h"
-#include "logger.h"
 
+#include <pthread.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <pthread.h>
+
+#if defined(HAVE_OPENSSL_SHA)
+#include <openssl/rand.h>
+#endif
 
 #define AUTH_MAX_SESSIONS 1024
+#define LOGIN_MAX_ATTEMPTS 5
+#define LOGIN_WINDOW_SECONDS (15 * 60)
+#define LOGIN_LOCK_SECONDS (15 * 60)
 
-static struct {
-    char         token[65];
-    AuthSession  s;
-    long         expires_at;
-    int          used;
-} g_sessions[AUTH_MAX_SESSIONS];
+typedef struct {
+    char token[65];
+    AuthSession session;
+    long expires_at;
+    int used;
+} SessionSlot;
 
-static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
-static int             g_timeout_min = 60;
+typedef struct {
+    char phone[32];
+    int attempts;
+    long window_started;
+    long locked_until;
+} LoginGuard;
+
+static SessionSlot g_sessions[AUTH_MAX_SESSIONS];
+static LoginGuard g_guards[AUTH_MAX_SESSIONS];
+static pthread_mutex_t g_auth_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int g_timeout_min = 60;
+
+void auth_set_session_timeout(int minutes)
+{
+    if (minutes >= 1 && minutes <= 1440) g_timeout_min = minutes;
+}
 
 void auth_shutdown(void)
 {
-    pthread_mutex_lock(&g_mu);
+    pthread_mutex_lock(&g_auth_mutex);
     memset(g_sessions, 0, sizeof g_sessions);
-    pthread_mutex_unlock(&g_mu);
+    memset(g_guards, 0, sizeof g_guards);
+    pthread_mutex_unlock(&g_auth_mutex);
 }
 
-static void random_token_hex(char *out, size_t cap)
+static int random_token(char out[65])
 {
-    uint8_t buf[32];
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        (void)!fread(buf, 1, sizeof buf, f);
-        fclose(f);
-    } else {
-        /* Fallback: mistura várias fontes. Em Linux/macOS isto é
-         * apenas defensivo; em Windows WSL ou containers restritos
-         * ainda gera entropia suficiente para o token ser único. */
-        static uint64_t seed = 0;
-        if (seed == 0) seed = (uint64_t)time(NULL);
-        seed = seed * 6364136223846793005ULL + 1442695040888963407ULL; /* LCG */
-        uint64_t v = seed ^ ((uint64_t)(uintptr_t)out << 17);
-        for (size_t i = 0; i < sizeof buf; i++) {
-            v = v * 2862933555777941757ULL + 3037000493ULL;
-            buf[i] = (uint8_t)(v >> 56);
-        }
+    unsigned char bytes[32];
+#if defined(HAVE_OPENSSL_SHA)
+    if (RAND_bytes(bytes, (int)sizeof bytes) != 1) return ERROR_INTERNAL;
+#else
+    FILE *random = fopen("/dev/urandom", "rb");
+    if (!random || fread(bytes, 1, sizeof bytes, random) != sizeof bytes) {
+        if (random) fclose(random);
+        return ERROR_INTERNAL;
     }
-    static const char *h = "0123456789abcdef";
-    size_t need = sizeof buf * 2;
-    if (need + 1 > cap) need = cap - 1;
-    for (size_t i = 0; i < need; i++) {
-        out[i] = h[(buf[i/2] >> ((1 - (i%2))*4)) & 0x0f];
+    fclose(random);
+#endif
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < sizeof bytes; ++i) {
+        out[i * 2] = hex[bytes[i] >> 4];
+        out[i * 2 + 1] = hex[bytes[i] & 0x0f];
     }
-    out[need] = '\0';
-}
-
-int auth_login_phone(const char *phone, const char *password_or_null,
-                     AuthSession *out)
-{
-    if (!phone || !validation_is_valid_phone(phone)) return ERROR_INVALID_PHONE;
-
-    User u;
-    int rc = users_find_by_phone(phone, &u);
-    if (rc != SUCCESS) return ERROR_UNAUTHORIZED;
-    if (u.status != USER_STATUS_ACTIVE) return ERROR_FORBIDDEN;
-
-    sqlite3_stmt *st = NULL;
-    rc = db_prepare("SELECT password_hash FROM users WHERE id=?;", &st);
-    if (rc != SUCCESS) return rc;
-    db_bind_int64(st, 1, (long long)u.id);
-    rc = sqlite3_step(st);
-    if (rc != SQLITE_ROW) { sqlite3_finalize(st); return ERROR_INTERNAL; }
-    const unsigned char *h = sqlite3_column_text(st, 0);
-    if (h && (!password_or_null || !*password_or_null ||
-              users_verify_password(password_or_null, (const char *)h) != SUCCESS)) {
-        sqlite3_finalize(st);
-        return ERROR_UNAUTHORIZED;
-    }
-    sqlite3_finalize(st);
-
-    if (out) {
-        out->user_id = u.id;
-        snprintf(out->phone, sizeof out->phone, "%s", u.phone);
-        out->type = u.type;
-        out->expires_at = time(NULL) + g_timeout_min * 60;
-    }
+    out[64] = '\0';
     return SUCCESS;
 }
 
-int auth_session_create(AuthSession *s, char *token_out, size_t cap)
+static int guard_slot(const char *phone, long now)
 {
-    if (!s || !token_out || cap < 65) return ERROR_INVALID_INPUT;
+    int free_slot = -1;
+    for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
+        if (g_guards[i].phone[0] == '\0' && free_slot < 0) free_slot = i;
+        if (strcmp(g_guards[i].phone, phone) == 0) return i;
+    }
+    if (free_slot >= 0) {
+        snprintf(g_guards[free_slot].phone, sizeof g_guards[free_slot].phone, "%s", phone);
+        g_guards[free_slot].window_started = now;
+    }
+    return free_slot;
+}
+
+static int login_is_allowed(const char *phone)
+{
+    long now = time(NULL);
+    pthread_mutex_lock(&g_auth_mutex);
+    int slot = guard_slot(phone, now);
+    int allowed = slot >= 0 && g_guards[slot].locked_until <= now;
+    pthread_mutex_unlock(&g_auth_mutex);
+    return allowed;
+}
+
+static void register_login_result(const char *phone, int success)
+{
+    long now = time(NULL);
+    pthread_mutex_lock(&g_auth_mutex);
+    int slot = guard_slot(phone, now);
+    if (slot >= 0) {
+        if (success) {
+            memset(&g_guards[slot], 0, sizeof g_guards[slot]);
+        } else {
+            if (now - g_guards[slot].window_started > LOGIN_WINDOW_SECONDS) {
+                g_guards[slot].attempts = 0;
+                g_guards[slot].window_started = now;
+            }
+            if (++g_guards[slot].attempts >= LOGIN_MAX_ATTEMPTS)
+                g_guards[slot].locked_until = now + LOGIN_LOCK_SECONDS;
+        }
+    }
+    pthread_mutex_unlock(&g_auth_mutex);
+}
+
+int auth_login_phone(const char *phone, const char *password, AuthSession *out)
+{
+    if (!phone || !validation_is_valid_phone(phone)) return ERROR_INVALID_PHONE;
+    if (!login_is_allowed(phone)) return ERROR_FORBIDDEN;
+
+    User user;
+    if (users_find_by_phone(phone, &user) != SUCCESS || user.status != USER_STATUS_ACTIVE) {
+        register_login_result(phone, 0);
+        return ERROR_UNAUTHORIZED;
+    }
+
+    sqlite3_stmt *statement = NULL;
+    if (db_prepare("SELECT password_hash FROM users WHERE id=?;", &statement) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_int64(statement, 1, (long long)user.id);
+    int found = sqlite3_step(statement) == SQLITE_ROW;
+    const unsigned char *hash = found ? sqlite3_column_text(statement, 0) : NULL;
+    int valid = found && hash && password && *password &&
+                users_verify_password(password, (const char *)hash) == SUCCESS;
+    sqlite3_finalize(statement);
+    if (!valid) {
+        register_login_result(phone, 0);
+        return ERROR_UNAUTHORIZED;
+    }
+
+    if (out) {
+        out->user_id = user.id;
+        out->type = user.type;
+        snprintf(out->phone, sizeof out->phone, "%s", user.phone);
+        out->expires_at = time(NULL) + g_timeout_min * 60;
+    }
+    register_login_result(phone, 1);
+    return SUCCESS;
+}
+
+int auth_session_create(AuthSession *session, char *token_out, size_t cap)
+{
+    if (!session || !token_out || cap < 65) return ERROR_INVALID_INPUT;
     char token[65];
-    random_token_hex(token, sizeof token);
+    if (random_token(token) != SUCCESS) return ERROR_INTERNAL;
 
-    pthread_mutex_lock(&g_mu);
+    pthread_mutex_lock(&g_auth_mutex);
+    long now = time(NULL);
     int slot = -1;
-    for (int i = 0; i < AUTH_MAX_SESSIONS; i++) {
-        if (!g_sessions[i].used) { slot = i; break; }
+    for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
+        if (g_sessions[i].used && g_sessions[i].expires_at <= now)
+            memset(&g_sessions[i], 0, sizeof g_sessions[i]);
+        if (!g_sessions[i].used && slot < 0) slot = i;
     }
-    if (slot < 0) {
-        pthread_mutex_unlock(&g_mu);
-        return ERROR_INTERNAL;
+    if (slot >= 0) {
+        g_sessions[slot].used = 1;
+        g_sessions[slot].session = *session;
+        g_sessions[slot].expires_at = session->expires_at;
+        snprintf(g_sessions[slot].token, sizeof g_sessions[slot].token, "%s", token);
     }
-    g_sessions[slot].used = 1;
-    snprintf(g_sessions[slot].token, sizeof g_sessions[slot].token, "%s", token);
-    g_sessions[slot].s = *s;
-    g_sessions[slot].expires_at = s->expires_at;
-    pthread_mutex_unlock(&g_mu);
-
+    pthread_mutex_unlock(&g_auth_mutex);
+    if (slot < 0) return ERROR_INTERNAL;
     snprintf(token_out, cap, "%s", token);
     return SUCCESS;
 }
 
 int auth_session_resolve(const char *token, AuthSession *out)
 {
-    if (!token) return ERROR_UNAUTHORIZED;
-    pthread_mutex_lock(&g_mu);
-    int rc = ERROR_UNAUTHORIZED;
+    if (!token || strlen(token) != 64) return ERROR_UNAUTHORIZED;
+    pthread_mutex_lock(&g_auth_mutex);
     long now = time(NULL);
-    for (int i = 0; i < AUTH_MAX_SESSIONS; i++) {
-        if (g_sessions[i].used && strcmp(g_sessions[i].token, token) == 0) {
-            if (g_sessions[i].expires_at > now) {
-                if (out) *out = g_sessions[i].s;
-                rc = SUCCESS;
-            } else {
-                rc = ERROR_SESSION_EXPIRED;
-            }
-            break;
+    int result = ERROR_UNAUTHORIZED;
+    for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
+        if (!g_sessions[i].used || strcmp(g_sessions[i].token, token) != 0) continue;
+        if (g_sessions[i].expires_at <= now) {
+            memset(&g_sessions[i], 0, sizeof g_sessions[i]);
+            result = ERROR_SESSION_EXPIRED;
+        } else {
+            if (out) *out = g_sessions[i].session;
+            result = SUCCESS;
         }
+        break;
     }
-    pthread_mutex_unlock(&g_mu);
-    return rc;
+    pthread_mutex_unlock(&g_auth_mutex);
+    return result;
 }
 
 int auth_session_revoke(const char *token)
 {
     if (!token) return ERROR_INVALID_INPUT;
-    pthread_mutex_lock(&g_mu);
-    int rc = ERROR_NOT_FOUND;
-    for (int i = 0; i < AUTH_MAX_SESSIONS; i++) {
+    pthread_mutex_lock(&g_auth_mutex);
+    int result = ERROR_NOT_FOUND;
+    for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
         if (g_sessions[i].used && strcmp(g_sessions[i].token, token) == 0) {
             memset(&g_sessions[i], 0, sizeof g_sessions[i]);
-            rc = SUCCESS;
+            result = SUCCESS;
             break;
         }
     }
-    pthread_mutex_unlock(&g_mu);
-    return rc;
+    pthread_mutex_unlock(&g_auth_mutex);
+    return result;
 }

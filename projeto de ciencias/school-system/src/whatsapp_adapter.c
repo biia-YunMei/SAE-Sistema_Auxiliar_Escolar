@@ -30,6 +30,41 @@ static size_t cb_write(void *ptr, size_t s, size_t n, void *u)
     m->data[m->size] = '\0';
     return total;
 }
+
+static int json_escape(char *out, size_t cap, const char *text)
+{
+    size_t used = 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+        const char *escape = NULL;
+        char unicode[7];
+        switch (*p) {
+        case '"':  escape = "\\\""; break;
+        case '\\': escape = "\\\\"; break;
+        case '\b': escape = "\\b"; break;
+        case '\f': escape = "\\f"; break;
+        case '\n': escape = "\\n"; break;
+        case '\r': escape = "\\r"; break;
+        case '\t': escape = "\\t"; break;
+        default:
+            if (*p < 0x20) {
+                (void)snprintf(unicode, sizeof unicode, "\\u%04x", *p);
+                escape = unicode;
+            }
+            break;
+        }
+        if (escape) {
+            size_t len = strlen(escape);
+            if (used + len >= cap) return ERROR_TOO_LONG;
+            memcpy(out + used, escape, len);
+            used += len;
+        } else {
+            if (used + 1 >= cap) return ERROR_TOO_LONG;
+            out[used++] = (char)*p;
+        }
+    }
+    out[used] = '\0';
+    return SUCCESS;
+}
 #endif
 
 int whatsapp_send_via_api(const char *phone, const char *text)
@@ -41,28 +76,32 @@ int whatsapp_send_via_api(const char *phone, const char *text)
     (void)phone;
     return ERROR_NOT_IMPLEMENTED;
 #else
-    /* Carrega config e envia via libcurl. */
-    extern const AppConfig *app_config(void);
-    const AppConfig *cfg = app_config();
+    const AppConfig *cfg = config_current();
     if (!cfg) return ERROR_CONFIG;
 
-    char url[512] = {0}, token[512] = {0}, pid[64] = {0};
-    strncpy(url,   cfg->whatsapp_api_url, sizeof url   - 1);
-    strncpy(token, cfg->whatsapp_api_token, sizeof token - 1);
-    strncpy(pid,   cfg->whatsapp_phone_id, sizeof pid - 1);
-    if (!*url || !*token || !*pid) {
+    if (!cfg->whatsapp_api_url[0] || !cfg->whatsapp_api_token[0] ||
+        !cfg->whatsapp_phone_id[0]) {
         log_warn("whatsapp: credenciais ausentes no .env");
         return ERROR_CONFIG;
     }
 
     char endpoint[768];
-    snprintf(endpoint, sizeof endpoint, "%s/%s/messages", url, pid);
+    int endpoint_len = snprintf(endpoint, sizeof endpoint, "%s/%s/messages",
+                                cfg->whatsapp_api_url, cfg->whatsapp_phone_id);
+    if (endpoint_len < 0 || (size_t)endpoint_len >= sizeof endpoint)
+        return ERROR_TOO_LONG;
 
-    /* Body JSON simples. Em produção, usar cJSON para escaping seguro. */
-    char body[2048];
+    /* Escapa o texto antes de inseri-lo no corpo JSON. */
+    char escaped_text[24001];
+    int escape_rc = json_escape(escaped_text, sizeof escaped_text, text);
+    if (escape_rc != SUCCESS) return escape_rc;
+
+    /* A Cloud API recebe o número em formato E.164 sem o sinal '+'. */
+    const char *recipient = phone[0] == '+' ? phone + 1 : phone;
+    char body[24576];
     int n = snprintf(body, sizeof body,
         "{\"messaging_product\":\"whatsapp\",\"to\":\"%s\",\"type\":\"text\","
-        "\"text\":{\"body\":\"%s\"}}", phone, text);
+        "\"text\":{\"body\":\"%s\"}}", recipient, escaped_text);
     if (n < 0 || (size_t)n >= sizeof body) return ERROR_TOO_LONG;
 
     CURL *c = curl_easy_init();
@@ -71,7 +110,13 @@ int whatsapp_send_via_api(const char *phone, const char *text)
     struct curl_slist *hdrs = NULL;
     hdrs = curl_slist_append(hdrs, "Content-Type: application/json");
     char auth_hdr[600];
-    snprintf(auth_hdr, sizeof auth_hdr, "Authorization: Bearer %s", token);
+    int auth_len = snprintf(auth_hdr, sizeof auth_hdr, "Authorization: Bearer %s",
+                            cfg->whatsapp_api_token);
+    if (auth_len < 0 || (size_t)auth_len >= sizeof auth_hdr) {
+        curl_slist_free_all(hdrs);
+        curl_easy_cleanup(c);
+        return ERROR_TOO_LONG;
+    }
     hdrs = curl_slist_append(hdrs, auth_hdr);
 
     struct MemBuf mem = {0};

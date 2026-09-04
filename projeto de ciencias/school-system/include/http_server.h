@@ -22,6 +22,9 @@ typedef struct {
     const char *body;       /* corpo (pode ser "") */
     size_t      body_len;
     const char *auth;       /* valor do header Authorization (sem "Bearer ") */
+    const char *webhook_signature; /* X-Hub-Signature-256, se houver */
+    char        auth_storage[512];
+    char        webhook_signature_storage[256];
     void       *user_ctx;   /* contexto passado no server_run */
     /* Armazenamento da requisição, gerenciado pelo servidor. */
     char       *storage;

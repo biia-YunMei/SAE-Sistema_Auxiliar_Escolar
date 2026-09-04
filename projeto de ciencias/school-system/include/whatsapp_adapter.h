@@ -10,7 +10,7 @@
 #include "error.h"
 
 /* Envia mensagem via API oficial. Requer configuração em .env:
- *   WHATSAPP_API_URL       — ex: https://graph.facebook.com/v18.0
+ *   WHATSAPP_API_URL       — ex: https://graph.facebook.com/vXX.X
  *   WHATSAPP_API_TOKEN     — token de acesso
  *   WHATSAPP_PHONE_NUMBER_ID
  */

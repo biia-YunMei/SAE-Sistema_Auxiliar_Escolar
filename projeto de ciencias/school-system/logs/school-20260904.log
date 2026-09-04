@@ -1,0 +1,31 @@
+[2026-09-04 15:41:20] [INFO] [main.c:89] === School Backend iniciando ===
+[2026-09-04 15:41:20] [INFO] [main.c:90] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-09-04 15:41:20] [INFO] [database.c:118] Schema versão atual: 12
+[2026-09-04 15:41:20] [INFO] [database.c:312] Banco inicializado em data/school.db
+[2026-09-04 15:41:20] [INFO] [whatsapp.c:30] whatsapp: módulo inicializado
+[2026-09-04 15:41:20] [INFO] [main.c:112] Rotas registradas: 18
+[2026-09-04 15:41:20] [INFO] [server.c:258] HTTP server escutando em 0.0.0.0:8080
+[2026-09-04 15:42:02] [INFO] [server.c:210] POST /api/auth body=43
+[2026-09-04 15:42:41] [INFO] [server.c:210] POST /api/whatsapp/messages body=44
+[2026-09-04 15:42:41] [WARNING] [whatsapp_adapter.c:84] whatsapp: credenciais ausentes no .env
+[2026-09-04 15:42:41] [WARNING] [whatsapp.c:51] whatsapp: falhou (500), mensagem NÃO enviada
+[2026-09-04 15:42:41] [ERROR] [whatsapp_controller.c:240] whatsapp: notificacao manual falhou para +5566997213036 (404)
+[2026-09-04 17:21:05] [INFO] [main.c:123] === School Backend finalizando ===
+[2026-09-04 19:03:21] [INFO] [main.c:93] === School Backend iniciando ===
+[2026-09-04 19:03:21] [INFO] [main.c:94] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-09-04 19:03:21] [INFO] [database.c:118] Schema versão atual: 13
+[2026-09-04 19:03:21] [INFO] [database.c:326] Banco inicializado em data/school.db
+[2026-09-04 19:03:21] [INFO] [whatsapp.c:31] whatsapp: modulo inicializado
+[2026-09-04 19:03:21] [INFO] [main.c:116] Rotas registradas: 20
+[2026-09-04 19:03:21] [INFO] [server.c:259] HTTP server escutando em 0.0.0.0:8080
+[2026-09-04 20:05:24] [INFO] [main.c:127] === School Backend finalizando ===
+[2026-09-04 20:10:04] [INFO] [main.c:93] === School Backend iniciando ===
+[2026-09-04 20:10:04] [INFO] [main.c:94] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-09-04 20:10:04] [INFO] [database.c:118] Schema versão atual: 13
+[2026-09-04 20:10:04] [INFO] [database.c:326] Banco inicializado em data/school.db
+[2026-09-04 20:10:04] [INFO] [whatsapp.c:31] whatsapp: modulo inicializado
+[2026-09-04 20:10:04] [INFO] [main.c:116] Rotas registradas: 20
+[2026-09-04 20:10:04] [INFO] [server.c:259] HTTP server escutando em 0.0.0.0:8080
+[2026-09-04 20:10:56] [INFO] [server.c:211] POST /api/auth body=43
+[2026-09-04 20:11:14] [INFO] [server.c:211] GET /api/users body=0
+[2026-09-04 20:14:35] [INFO] [main.c:127] === School Backend finalizando ===

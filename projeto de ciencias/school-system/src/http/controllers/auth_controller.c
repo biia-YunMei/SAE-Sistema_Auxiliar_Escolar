@@ -46,12 +46,15 @@ int ctrl_auth_login(const HttpRequest *req, HttpResponse *res)
     AuthSession s;
     int rc = auth_login_phone(phone, password[0] ? password : NULL, &s);
     if (rc != SUCCESS) {
+        if (rc == ERROR_FORBIDDEN)
+            return http_respond_error(res, 429, "too many login attempts; try again later");
         if (rc == ERROR_UNAUTHORIZED)
             return http_respond_error(res, 401, "invalid credentials");
-        return http_respond_error(res, 400, "login failed");
+        return http_respond_error(res, 500, "login failed");
     }
     char token[80];
-    auth_session_create(&s, token, sizeof token);
+    if (auth_session_create(&s, token, sizeof token) != SUCCESS)
+        return http_respond_error(res, 500, "could not create session");
 
     char body[256];
     snprintf(body, sizeof body,
@@ -59,4 +62,16 @@ int ctrl_auth_login(const HttpRequest *req, HttpResponse *res)
         token, (long long)s.user_id,
         user_type_str(s.type), s.expires_at);
     return http_respond_json(res, 200, body);
+}
+
+/* POST /api/auth/logout: invalida o token que chegou no Authorization. */
+int ctrl_auth_logout(const HttpRequest *req, HttpResponse *res)
+{
+    if (strcmp(req->method, "POST") != 0)
+        return http_respond_error(res, 405, "method not allowed");
+    if (!req->auth)
+        return http_respond_error(res, 401, "missing authorization");
+    if (auth_session_revoke(req->auth) != SUCCESS)
+        return http_respond_error(res, 401, "invalid session");
+    return http_respond_json(res, 200, "{\"ok\":true}");
 }

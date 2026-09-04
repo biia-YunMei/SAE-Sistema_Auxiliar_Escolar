@@ -9,6 +9,7 @@
  * Regra #29: nenhuma regra de negócio, SQL ou HTTP vive aqui.
  */
 #include "config.h"
+#include "auth.h"
 #include "error.h"
 #include "logger.h"
 #include "database.h"
@@ -48,11 +49,13 @@ static LogLevel parse_level(const char *s)
 static const Route g_routes[] = {
     { "GET",  "/api/health",                       ctrl_health             },
     { "POST", "/api/auth",                         ctrl_auth_login         },
+    { "POST", "/api/auth/logout",                  ctrl_auth_logout        },
     { "POST", "/api/bootstrap",                    ctrl_bootstrap_admin    },
     { "GET",  "/api/notices",                      ctrl_notices_list       },
     { "POST", "/api/notices",                      ctrl_notices_create     },
     { "POST", "/api/users",                        ctrl_users_create       },
     { "GET",  "/api/users",                        ctrl_users_list         },
+    { "POST", "/api/students/class",               ctrl_students_assign_class },
 
     { "GET",  "/api/classes",                      ctrl_classes_list       },
     { "POST", "/api/classes",                      ctrl_classes_create     },
@@ -64,7 +67,10 @@ static const Route g_routes[] = {
     { "PUT",  "/api/tasks/:id",                    wr_tasks_update         },
     { "DELETE","/api/tasks/:id",                   wr_tasks_delete         },
 
-    { "POST", "/api/whatsapp/webhook",             ctrl_whatsapp_webhook   }
+    { "GET",  "/api/whatsapp/webhook",             ctrl_whatsapp_webhook   },
+    { "POST", "/api/whatsapp/webhook",             ctrl_whatsapp_webhook   },
+    { "POST", "/api/whatsapp/messages",            ctrl_whatsapp_send      },
+    { "POST", "/api/whatsapp/notify-class",        ctrl_whatsapp_notify_class }
 };
 
 struct ServerRoutes { const Route *routes; size_t n; };
@@ -84,6 +90,7 @@ int main(int argc, char **argv)
     }
 
     logger_init(config_get_log_dir(&cfg), parse_level(config_get_log_level(&cfg)));
+    auth_set_session_timeout(cfg.session_timeout_min);
     log_info("=== School Backend iniciando ===");
     log_info("Servidor %s:%d | Banco: %s",
              cfg.server_host, cfg.server_port, config_get_database_path(&cfg));
@@ -108,8 +115,15 @@ int main(int argc, char **argv)
     };
 
     log_info("Rotas registradas: %zu", sr.n);
-    http_server_run(cfg.server_host, cfg.server_port, &sr,
-                    (volatile int *)&g_should_exit);
+    rc = http_server_run(cfg.server_host, cfg.server_port, &sr,
+                         (volatile int *)&g_should_exit);
+    if (rc != SUCCESS) {
+        log_error("Servidor HTTP encerrou com erro (%d)", rc);
+        whatsapp_shutdown();
+        database_shutdown();
+        logger_shutdown();
+        return rc;
+    }
 
     log_info("=== School Backend finalizando ===");
     whatsapp_shutdown();

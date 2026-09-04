@@ -10,12 +10,14 @@
 #include "http_server.h"
 
 int ctrl_auth_login        (const HttpRequest *req, HttpResponse *res);
+int ctrl_auth_logout       (const HttpRequest *req, HttpResponse *res);
 int ctrl_bootstrap_admin   (const HttpRequest *req, HttpResponse *res);
 int ctrl_notices_list      (const HttpRequest *req, HttpResponse *res);
 int ctrl_notices_create    (const HttpRequest *req, HttpResponse *res);
 
 int ctrl_users_create      (const HttpRequest *req, HttpResponse *res);
 int ctrl_users_list        (const HttpRequest *req, HttpResponse *res);
+int ctrl_students_assign_class(const HttpRequest *req, HttpResponse *res);
 
 int ctrl_classes_list      (const HttpRequest *req, HttpResponse *res);
 int ctrl_classes_create    (const HttpRequest *req, HttpResponse *res);
@@ -35,6 +37,8 @@ int wr_classes_add_teacher   (const HttpRequest *req, HttpResponse *res);
 int wr_classes_remove_teacher(const HttpRequest *req, HttpResponse *res);
 
 int ctrl_whatsapp_webhook  (const HttpRequest *req, HttpResponse *res);
+int ctrl_whatsapp_send     (const HttpRequest *req, HttpResponse *res);
+int ctrl_whatsapp_notify_class(const HttpRequest *req, HttpResponse *res);
 int ctrl_health            (const HttpRequest *req, HttpResponse *res);
 
 #endif /* SCHOOL_CONTROLLERS_H */

@@ -252,6 +252,20 @@ static int run_migrations(void)
           "CREATE INDEX IF NOT EXISTS idx_notices_class ON notices(class_id, created_at);"
           "CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);"
           "CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(sender_phone, created_at);"
+        },
+        { 13,
+          "CREATE TABLE IF NOT EXISTS pending_tasks ("
+          "  phone TEXT PRIMARY KEY,"
+          "  teacher_id INTEGER NOT NULL,"
+          "  class_id INTEGER NOT NULL,"
+          "  subject TEXT NOT NULL,"
+          "  title TEXT NOT NULL,"
+          "  description TEXT NOT NULL DEFAULT '',"
+          "  due_date TEXT NOT NULL,"
+          "  updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+          "  FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,"
+          "  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE"
+          ");"
         }
     };
 
