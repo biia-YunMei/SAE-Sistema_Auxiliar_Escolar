@@ -10,6 +10,7 @@
 #include "error.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 typedef enum {
     TASK_STATUS_ACTIVE   = 0,

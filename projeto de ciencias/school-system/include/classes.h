@@ -28,6 +28,8 @@ const char *class_shift_str(ClassShift s);
 ClassShift  class_shift_from(const char *s);
 
 int classes_create(const char *name, const char *grade, ClassShift shift, Class *out);
+int classes_update(int64_t id, const char *name, const char *grade, ClassShift shift, Class *out);
+int classes_delete(int64_t id);
 int classes_list(Class **out, size_t *count);
 int classes_find_by_id(int64_t id, Class *out);
 int classes_find_by_name(const char *name, Class *out);

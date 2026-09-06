@@ -9,7 +9,8 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in {
       devShells = forAllSystems (system:
-        let pkgs = import nixpkgs { inherit system; };
+        let
+          pkgs = import nixpkgs { inherit system; };
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
@@ -21,7 +22,9 @@
               openssl
               gdb
               valgrind
+              bubblewrap
             ];
+
             shellHook = ''
               echo "Ambiente School System pronto. Execute: make tests"
             '';
@@ -29,3 +32,4 @@
         });
     };
 }
+

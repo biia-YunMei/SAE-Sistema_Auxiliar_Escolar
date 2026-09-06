@@ -7,6 +7,10 @@
  *   - níveis filtráveis
  *   - nunca bloqueia o programa se o disco falhar
  */
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "logger.h"
 
 #include <stdio.h>
@@ -18,6 +22,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
+
+#if defined(_WIN32)
+#include <direct.h>
+#endif
 
 /* Limite máximo da mensagem após formatação (evita explosão de log). */
 #define LOG_MAX_MESSAGE 2048
@@ -48,12 +56,21 @@ static const char *level_str(LogLevel l)
     return "?";
 }
 
+static int make_dir(const char *path)
+{
+#if defined(_WIN32)
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
+
 /* Garante que o diretório de logs existe. */
 static int ensure_dir(const char *path)
 {
     if (!path || !*path) return -1;
     struct stat st;
-    if (stat(path, &st) == 0) return 0;
+    if (stat(path, &st) == 0) return S_ISDIR(st.st_mode) ? 0 : -1;
     /* mkdir -p manual (Windows não tem mkdir -p). */
     char tmp[512];
     size_t n = strlen(path);
@@ -63,11 +80,11 @@ static int ensure_dir(const char *path)
         if (tmp[i] == '/' || tmp[i] == '\\') {
             char saved = tmp[i];
             tmp[i] = '\0';
-            mkdir(tmp);                  /* ignora erro: pode já existir */
+            (void)make_dir(tmp);         /* ignora erro: pode já existir */
             tmp[i] = saved;
         }
     }
-    mkdir(tmp);
+    (void)make_dir(tmp);
     return 0;
 }
 

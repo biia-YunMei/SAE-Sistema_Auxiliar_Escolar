@@ -6,6 +6,7 @@
  */
 #include "router.h"
 #include "http_server.h"
+#include "auth.h"
 #include "logger.h"
 
 #include <string.h>
@@ -35,6 +36,17 @@ static int match_path(const char *pattern, const char *path,
     return *pp == 0 && *ap == 0;
 }
 
+/* Apenas os endpoints necessários antes da autenticação, ou acionados por
+ * serviços externos, ficam públicos. Toda rota de uso do sistema passa por
+ * esta barreira, além das permissões específicas dos seus controllers. */
+static int route_is_public(const Route *route)
+{
+    return (strcmp(route->pattern, "/api/health") == 0) ||
+           (strcmp(route->pattern, "/api/auth") == 0) ||
+           (strcmp(route->pattern, "/api/bootstrap") == 0) ||
+           (strcmp(route->pattern, "/api/whatsapp/webhook") == 0);
+}
+
 int router_dispatch(const Route *routes, size_t n,
                     const HttpRequest *req, HttpResponse *res,
                     char *id_out, size_t cap)
@@ -42,6 +54,13 @@ int router_dispatch(const Route *routes, size_t n,
     for (size_t i = 0; i < n; i++) {
         if (strcmp(routes[i].method, req->method) != 0) continue;
         if (match_path(routes[i].pattern, req->path, id_out, cap)) {
+            if (!route_is_public(&routes[i])) {
+                AuthSession session;
+                if (!req->auth)
+                    return http_respond_error(res, 401, "missing authorization");
+                if (auth_session_resolve(req->auth, &session) != SUCCESS)
+                    return http_respond_error(res, 401, "invalid session");
+            }
             return routes[i].handler(req, res);
         }
     }

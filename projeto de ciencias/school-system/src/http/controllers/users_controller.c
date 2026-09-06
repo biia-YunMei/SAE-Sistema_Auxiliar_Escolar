@@ -61,21 +61,6 @@ int ctrl_users_create(const HttpRequest *req, HttpResponse *res)
     if (rc == ERROR_ALREADY_EXISTS) return http_respond_error(res, 409, "phone already registered");
     if (rc != SUCCESS)              return http_respond_error(res, 400, "create failed");
 
-    /* Se for professor, cria o registro em teachers. */
-    if (t == USER_TYPE_PROF) {
-        sqlite3_stmt *st = NULL;
-        db_prepare("INSERT INTO teachers(user_id) VALUES(?);", &st);
-        db_bind_int64(st, 1, (long long)u.id);
-        sqlite3_step(st);
-        sqlite3_finalize(st);
-    } else if (t == USER_TYPE_STUD) {
-        sqlite3_stmt *st = NULL;
-        db_prepare("INSERT INTO students(user_id) VALUES(?);", &st);
-        db_bind_int64(st, 1, (long long)u.id);
-        sqlite3_step(st);
-        sqlite3_finalize(st);
-    }
-
     char out[256];
     snprintf(out, sizeof out,
         "{\"id\":%lld,\"name\":\"%s\",\"phone\":\"%s\",\"type\":\"%s\"}",
@@ -86,8 +71,10 @@ int ctrl_users_create(const HttpRequest *req, HttpResponse *res)
 int ctrl_users_list(const HttpRequest *req, HttpResponse *res)
 {
     AuthSession s;
-    int rc = require_coord(req, res, &s);
-    if (rc != SUCCESS) return rc;
+    if (!req->auth || auth_session_resolve(req->auth, &s) != SUCCESS)
+        return http_respond_error(res, 401, "invalid session");
+    if (s.type != USER_TYPE_COORD && s.type != USER_TYPE_PROF)
+        return http_respond_error(res, 403, "forbidden");
 
     sqlite3_stmt *st = NULL;
     if (db_prepare("SELECT id,name,phone,user_type,status FROM users;", &st) != SUCCESS)
@@ -121,4 +108,45 @@ int ctrl_users_list(const HttpRequest *req, HttpResponse *res)
     int r = http_respond_json(res, 200, out);
     free(out);
     return r;
+}
+
+int ctrl_users_update(const HttpRequest *req, HttpResponse *res, const char *id_str)
+{
+    AuthSession session;
+    int rc = require_coord(req, res, &session);
+    if (rc != SUCCESS) return rc;
+    long long id = strtoll(id_str, NULL, 10);
+    if (id <= 0) return http_respond_error(res, 400, "invalid id");
+
+    User current;
+    if (users_find_by_id(id, &current) != SUCCESS)
+        return http_respond_error(res, 404, "not found");
+    char name[121] = {0}, phone[32] = {0}, password[128] = {0};
+    if (!extract_str(req->body, "name", name, sizeof name) ||
+        !extract_str(req->body, "phone", phone, sizeof phone))
+        return http_respond_error(res, 400, "name and phone are required");
+    (void)extract_str(req->body, "password", password, sizeof password);
+
+    User updated;
+    rc = users_update(id, name, phone, current.type,
+                      password[0] ? password : NULL, &updated);
+    if (rc == ERROR_ALREADY_EXISTS)
+        return http_respond_error(res, 409, "phone already registered");
+    if (rc != SUCCESS) return http_respond_error(res, 400, "update failed");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"user updated\"}");
+}
+
+int ctrl_users_delete(const HttpRequest *req, HttpResponse *res, const char *id_str)
+{
+    AuthSession session;
+    int rc = require_coord(req, res, &session);
+    if (rc != SUCCESS) return rc;
+    long long id = strtoll(id_str, NULL, 10);
+    if (id <= 0) return http_respond_error(res, 400, "invalid id");
+    if (id == session.user_id)
+        return http_respond_error(res, 400, "cannot delete own user");
+    rc = users_delete(id);
+    if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "not found");
+    if (rc != SUCCESS) return http_respond_error(res, 400, "delete failed");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"user deleted\"}");
 }

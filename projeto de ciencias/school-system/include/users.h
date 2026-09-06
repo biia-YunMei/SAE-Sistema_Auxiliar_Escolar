@@ -50,6 +50,9 @@ int users_create(const char *name, const char *phone,
 
 int users_find_by_phone(const char *phone, User *out);
 int users_find_by_id(int64_t id, User *out);
+int users_update(int64_t id, const char *name, const char *phone,
+                 UserType type, const char *plain_password_or_null, User *out);
+int users_delete(int64_t id);
 int users_set_status(int64_t id, UserStatus status);
 
 /* Hash de senha. O salt é gerado internamente. */

@@ -1,0 +1,8 @@
+[2026-09-06 11:31:55] [DEBUG] [test_logger.c:32] linha debug
+[2026-09-06 11:31:55] [INFO] [test_logger.c:33] linha info
+[2026-09-06 11:31:55] [WARNING] [test_logger.c:34] linha warn
+[2026-09-06 11:31:55] [ERROR] [test_logger.c:35] linha error com 42
+[2026-09-06 11:34:29] [DEBUG] [test_logger.c:45] linha debug
+[2026-09-06 11:34:29] [INFO] [test_logger.c:46] linha info
+[2026-09-06 11:34:29] [WARNING] [test_logger.c:47] linha warn
+[2026-09-06 11:34:29] [ERROR] [test_logger.c:48] linha error com 42

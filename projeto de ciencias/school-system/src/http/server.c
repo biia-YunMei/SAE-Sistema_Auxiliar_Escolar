@@ -13,24 +13,113 @@
 #if defined(_WIN32)
   #include <winsock2.h>
   #include <ws2tcpip.h>
-  typedef int socklen_t;
+  #include <windows.h>
+  typedef SOCKET socket_t;
+  typedef SSIZE_T ssize_t;
   #define close closesocket
   #define strncasecmp _strnicmp
 #else
   #include <sys/socket.h>
+  #include <sys/select.h>
   #include <netinet/in.h>
   #include <arpa/inet.h>
+  #include <strings.h>
   #include <unistd.h>
   #include <pthread.h>
   #include <signal.h>
   #include <errno.h>
   #include <fcntl.h>
+  typedef int socket_t;
 #endif
 
 #define MAX_HEADER 16384
 #define MAX_BODY   (1024*1024)
 
 /* ---------- helpers de resposta ---------------------------------- */
+
+/* Mantém mensagens internas curtas nos controllers, mas entrega ao usuário
+ * uma orientação clara e em português. O status HTTP continua disponível
+ * para a interface identificar a categoria do erro. */
+static const char *friendly_error_message(const char *message)
+{
+    static const struct {
+        const char *internal;
+        const char *friendly;
+    } messages[] = {
+        { "administrator already exists", "Já existe um administrador cadastrado." },
+        { "bad request", "Não foi possível entender a solicitação enviada." },
+        { "class exists", "Já existe uma turma com esse nome." },
+        { "class_id and message are required", "Informe a turma e a mensagem." },
+        { "class_id required", "Informe a turma." },
+        { "cannot delete own user", "Você não pode excluir o próprio usuário enquanto está conectado." },
+        { "coordinator only", "Esta ação é permitida somente para coordenadores." },
+        { "could not assign class", "Não foi possível vincular o aluno à turma." },
+        { "could not create administrator", "Não foi possível criar o administrador." },
+        { "could not create notice", "Não foi possível publicar o aviso." },
+        { "could not create session", "Não foi possível iniciar sua sessão. Tente novamente." },
+        { "create failed", "Não foi possível concluir o cadastro. Verifique os dados e tente novamente." },
+        { "database error", "Não foi possível consultar os dados agora. Tente novamente." },
+        { "delete failed", "Não foi possível excluir o item. Tente novamente." },
+        { "due_date required", "Informe a data de entrega." },
+        { "forbidden", "Você não tem permissão para realizar esta ação." },
+        { "grade required", "Informe a série da turma." },
+        { "id required", "Informe a identificação do item." },
+        { "id too long", "A identificação informada é muito longa." },
+        { "ids required", "Informe as identificações necessárias." },
+        { "invalid credentials", "Telefone ou senha incorretos. Confira os dados e tente novamente." },
+        { "invalid due_date", "A data de entrega não é válida. Use o formato AAAA-MM-DD." },
+        { "invalid id", "A identificação informada não é válida." },
+        { "invalid message", "A mensagem informada não é válida." },
+        { "invalid phone", "O número de telefone informado não é válido." },
+        { "invalid session", "Sua sessão expirou ou já foi encerrada. Faça login novamente." },
+        { "invalid type", "O tipo de usuário informado não é válido." },
+        { "invalid verification request", "A verificação recebida não é válida." },
+        { "invalid webhook signature", "Não foi possível confirmar a origem da mensagem." },
+        { "link failed", "Não foi possível vincular o professor à turma." },
+        { "list failed", "Não foi possível carregar a lista agora. Tente novamente." },
+        { "login failed", "Não foi possível entrar agora. Tente novamente em alguns instantes." },
+        { "method not allowed", "Esta ação não está disponível nesta página." },
+        { "missing authorization", "Sua sessão não foi encontrada. Faça login novamente para continuar." },
+        { "missing fields", "Preencha todos os campos obrigatórios." },
+        { "missing phone", "Informe o número de telefone para entrar." },
+        { "missing webhook signature", "Não foi possível confirmar a origem da mensagem." },
+        { "name required", "Informe o nome." },
+        { "name and phone are required", "Informe o nome e o telefone." },
+        { "name, phone and password are required", "Informe nome, telefone e senha." },
+        { "not found", "O item solicitado não foi encontrado." },
+        { "not linked to class", "O professor não está vinculado a esta turma." },
+        { "not owner", "Você não tem permissão para alterar esta tarefa." },
+        { "notification delivery failed", "Não foi possível enviar a notificação." },
+        { "oom", "O sistema ficou sem memória para concluir esta ação." },
+        { "phone already registered", "Este telefone já está cadastrado." },
+        { "phone and message are required", "Informe o telefone e a mensagem." },
+        { "phone required", "Informe o número de telefone." },
+        { "processing failed", "Não foi possível processar a mensagem." },
+        { "query failed", "Não foi possível consultar os dados agora. Tente novamente." },
+        { "route not found", "A página solicitada não foi encontrada." },
+        { "signature verification failed", "Não foi possível confirmar a origem da mensagem." },
+        { "signature verification unavailable", "A confirmação de segurança não está disponível agora." },
+        { "student not found", "O aluno informado não foi encontrado." },
+        { "student tasks only", "Você só pode consultar as tarefas da sua própria turma." },
+        { "subject required", "Informe a matéria." },
+        { "teacher profile not found", "O cadastro de professor não foi encontrado." },
+        { "teacher_id required", "Informe o professor responsável." },
+        { "text too long", "O texto é maior do que o permitido." },
+        { "title and content are required", "Informe o título e o conteúdo do aviso." },
+        { "title required", "Informe o título." },
+        { "too many login attempts; try again later", "Foram feitas muitas tentativas. Aguarde alguns minutos e tente novamente." },
+        { "type required", "Informe o tipo de usuário." },
+        { "unlink failed", "Não foi possível remover o vínculo do professor com a turma." },
+        { "update failed", "Não foi possível salvar as alterações. Tente novamente." },
+        { "user_id and class_id are required", "Informe o aluno e a turma." },
+        { "verification failed", "Não foi possível confirmar a verificação." },
+        { "webhook not configured", "A integração de mensagens ainda não está configurada." }
+    };
+    if (!message) return "Ocorreu um erro inesperado. Tente novamente.";
+    for (size_t i = 0; i < sizeof messages / sizeof messages[0]; ++i)
+        if (strcmp(message, messages[i].internal) == 0) return messages[i].friendly;
+    return message;
+}
 
 int http_respond_text(HttpResponse *res, int status, const char *text)
 {
@@ -59,6 +148,7 @@ int http_respond_json(HttpResponse *res, int status, const char *json)
 int http_respond_error(HttpResponse *res, int code, const char *msg)
 {
     if (!res) return ERROR_INVALID_INPUT;
+    msg = friendly_error_message(msg);
     int n = snprintf(res->body_storage, sizeof res->body_storage,
         "{\"error\":%d,\"message\":\"%s\"}", code, msg ? msg : "");
     if (n < 0 || (size_t)n >= sizeof res->body_storage) return ERROR_TOO_LONG;
@@ -96,7 +186,7 @@ static const char *get_header_value(const char *raw_headers,
     return NULL;
 }
 
-static int parse_request(int cfd, HttpRequest *out)
+static int parse_request(socket_t cfd, HttpRequest *out)
 {
     char *buf = (char *)malloc(MAX_HEADER + MAX_BODY + 1);
     if (!buf) return -1;
@@ -158,7 +248,7 @@ static int parse_request(int cfd, HttpRequest *out)
     return 0;
 }
 
-static void send_response(int cfd, const HttpResponse *res)
+static void send_response(socket_t cfd, const HttpResponse *res)
 {
     char head[512];
     int n = snprintf(head, sizeof head,
@@ -192,7 +282,7 @@ int router_dispatch_request(const struct RouterCtx *ctx, const HttpRequest *req,
                             HttpResponse *res, char *id_out, size_t cap);
 
 typedef struct {
-    int    cfd;
+    socket_t cfd;
     void  *server_ctx;
 } ConnArg;
 
@@ -239,8 +329,12 @@ int http_server_run(const char *host, int port, void *ctx,
     signal(SIGPIPE, SIG_IGN);
 #endif
 
-    int sfd = (int)socket(AF_INET, SOCK_STREAM, 0);
+    socket_t sfd = socket(AF_INET, SOCK_STREAM, 0);
+#if defined(_WIN32)
+    if (sfd == INVALID_SOCKET) { log_error("socket falhou"); return ERROR_NETWORK; }
+#else
     if (sfd < 0) { log_error("socket: %s", strerror(errno)); return ERROR_NETWORK; }
+#endif
     int opt = 1;
     setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof opt);
 
@@ -271,10 +365,10 @@ int http_server_run(const char *host, int port, void *ctx,
         if (ready == 0) continue;
         if (ready < 0) { if (*should_stop) break; continue; }
 #if defined(_WIN32)
-        SOCKET cfd = accept(sfd, NULL, NULL);
+        socket_t cfd = accept(sfd, NULL, NULL);
         if (cfd == INVALID_SOCKET) break;
 #else
-        int cfd = accept(sfd, NULL, NULL);
+        socket_t cfd = accept(sfd, NULL, NULL);
         if (cfd < 0) break;
 #endif
         ConnArg *c = (ConnArg *)malloc(sizeof *c);

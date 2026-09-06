@@ -5,6 +5,15 @@
 
 CC          ?= cc
 .DEFAULT_GOAL := all
+
+# O wrapper do Nix injeta NIX_LDFLAGS no compilador. Quando o projeto está
+# em um diretório com espaços, essa variável chega ao linker sem escape e
+# separa o caminho em vários argumentos. As dependências deste projeto já
+# são obtidas via pkg-config, portanto removemos apenas esse caso quebrado.
+ifneq (,$(findstring $(CURDIR),$(NIX_LDFLAGS)))
+unexport NIX_LDFLAGS
+endif
+
 STD         := -std=c11
 WARN        := -Wall -Wextra -Wpedantic -Wshadow -Wformat=2 -Wstrict-prototypes \
                -Wmissing-prototypes -Wpointer-arith -Wcast-align -Wno-unused-parameter
@@ -25,7 +34,7 @@ MHD_CFLAGS  := $(shell pkg-config --cflags libmicrohttpd 2>/dev/null)
 MHD_LIBS    := $(shell pkg-config --libs   libmicrohttpd 2>/dev/null)
 
 CFLAGS      := $(STD) $(WARN) $(OPT) -Iinclude -Isrc -Isrc/http/controllers $(SQLITE_CFLAGS) $(CURL_CFLAGS) $(CRYPTO_CFLAGS) $(CRYPTO_DEF) $(MHD_CFLAGS)
-LDFLAGS     := $(SQLITE_LIBS) $(CURL_LIBS) $(CRYPTO_LIBS) $(MHD_LIBS) -lpthread
+LDFLAGS     := $(SQLITE_LIBS) $(CURL_LIBS) $(CRYPTO_LIBS) $(MHD_LIBS)
 
 # Quando libcurl estiver instalada, o build padrao ja inclui o adaptador
 # oficial do WhatsApp. Sem libcurl, o SAE ainda compila em modo local.
@@ -34,15 +43,27 @@ CFLAGS      += -DWHATSAPP_USE_CURL
 endif
 
 ifeq ($(OS),Windows_NT)
-LDFLAGS     += -lws2_32
+BIN_NAME     := sae.exe
+CFLAGS      += -pthread
+LDFLAGS     += -pthread -lws2_32
+else
+BIN_NAME     := sae
+CFLAGS      += -pthread
+LDFLAGS     += -pthread
 endif
 
 # ---- sources ---------------------------------------------------------------
 SRC := $(wildcard src/*.c) $(wildcard src/http/*.c) \
        $(wildcard src/http/controllers/*.c) \
        $(wildcard src/services/*.c) $(wildcard src/repositories/*.c)
-OBJ := $(SRC:.c=.o)
-BIN := build/sae
+# Artefatos nunca ficam junto do código-fonte. Por padrão a pasta é irmã do
+# projeto e, portanto, não entra no repositório Git. É possível substituí-la:
+#   make ARTIFACT_DIR=/caminho/para/meus-artefatos
+ARTIFACT_DIR ?= $(abspath $(CURDIR)/../school-system-artifacts)
+OBJ_DIR      := $(ARTIFACT_DIR)/obj
+TEST_DIR     := $(ARTIFACT_DIR)/tests
+BIN          := $(ARTIFACT_DIR)/$(BIN_NAME)
+OBJ          := $(patsubst %.c,$(OBJ_DIR)/%.o,$(SRC))
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 
@@ -54,7 +75,19 @@ BINDIR ?= $(PREFIX)/bin
 FORCE:
 $(OBJ): FORCE
 
+ifeq ($(OS),Windows_NT)
+all: $(BIN)
+
+install: $(BIN)
+	@echo "Executável criado em $(BIN). Adicione $(ARTIFACT_DIR) ao PATH para usar sae."
+else
 all: $(BIN) install
+
+install: $(BIN)
+	@mkdir -p $(BINDIR)
+	@ln -sf "$(BIN)" "$(BINDIR)/sae"
+	@echo "SAE vinculado a $(BIN)"
+endif
 
 help:
 	@echo "make            Compila e atualiza o comando global sae"
@@ -76,51 +109,48 @@ sanitize: clean $(BIN)
 whatsapp: all
 
 $(BIN): $(OBJ)
-	@mkdir -p build
+	@mkdir -p "$(@D)"
 	$(CC) $(OBJ) -o $@ $(LDFLAGS)
 
-%.o: %.c
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: $(BIN)
-	./$(BIN) servidor
+	"$(BIN)" servidor
 
-install: $(BIN)
-	@mkdir -p $(BINDIR)
-	@ln -sf "$(abspath $(BIN))" "$(BINDIR)/sae"
-	@echo "SAE vinculado a $(abspath $(BIN))"
-
-TEST_BINS := $(patsubst testes/%.c,build/%,$(wildcard testes/test_*.c))
+TEST_BINS := $(patsubst testes/%.c,$(TEST_DIR)/%,$(wildcard testes/test_*.c))
 TEST_SRC  := $(wildcard testes/test_*.c)
 
 tests: $(TEST_BINS)
-	@for b in $(TEST_BINS); do echo "==> $$b"; ./$$b || exit 1; done
+	@for b in $(TEST_BINS); do echo "==> $$b"; "$$b" || exit 1; done
 
 # Cada teste declara as fontes da aplicação das quais depende.
-build/test_validation: testes/test_validation.c src/validation.c
-build/test_error:      testes/test_error.c      src/error.c
-build/test_logger:     testes/test_logger.c     src/logger.c
-build/test_database:   testes/test_database.c   src/database.c src/logger.c src/validation.c
-build/test_auth:       testes/test_auth.c       src/database.c src/users.c src/auth.c src/validation.c src/logger.c
-build/test_permissions: testes/test_permissions.c src/database.c src/users.c src/classes.c src/permissions.c src/logger.c src/validation.c
-build/test_tasks:      testes/test_tasks.c      src/database.c src/users.c src/classes.c src/tasks.c src/logger.c src/validation.c
-build/test_whatsapp:   testes/test_whatsapp.c   src/whatsapp.c src/validation.c src/logger.c
-build/test_ai:         testes/test_ai.c         src/ai.c       src/validation.c src/logger.c
-build/test_http:       testes/test_http.c       src/http/server.c src/http/router.c src/config.c \
+$(TEST_DIR)/test_validation: testes/test_validation.c src/validation.c
+$(TEST_DIR)/test_error:      testes/test_error.c      src/error.c
+$(TEST_DIR)/test_logger:     testes/test_logger.c     src/logger.c
+$(TEST_DIR)/test_database:   testes/test_database.c   src/database.c src/logger.c src/validation.c
+$(TEST_DIR)/test_auth:       testes/test_auth.c       src/database.c src/users.c src/auth.c src/validation.c src/logger.c
+$(TEST_DIR)/test_permissions: testes/test_permissions.c src/database.c src/users.c src/classes.c src/permissions.c src/logger.c src/validation.c
+$(TEST_DIR)/test_tasks:      testes/test_tasks.c      src/database.c src/users.c src/classes.c src/tasks.c src/logger.c src/validation.c
+$(TEST_DIR)/test_whatsapp:   testes/test_whatsapp.c   src/whatsapp.c src/validation.c src/logger.c
+$(TEST_DIR)/test_ai:         testes/test_ai.c         src/ai.c       src/validation.c src/logger.c
+$(TEST_DIR)/test_http:       testes/test_http.c       src/http/server.c src/http/router.c src/config.c \
                        src/http/controllers/whatsapp_controller.c \
-                       src/whatsapp.c src/whatsapp_adapter.c src/logger.c src/validation.c
+                       src/whatsapp.c src/whatsapp_adapter.c src/auth.c src/database.c \
+                       src/users.c src/classes.c src/tasks.c src/logger.c src/validation.c
 
-build/test_%: testes/test_%.c
-	@mkdir -p build
+$(TEST_DIR)/test_%: testes/test_%.c
+	@mkdir -p "$(@D)"
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 install-deps:
 	@echo "Debian/Ubuntu/Pop!_OS:  sudo apt install -y build-essential pkg-config libsqlite3-dev libcurl4-openssl-dev"
 	@echo "Fedora:                  sudo dnf install -y gcc make pkg-config sqlite-devel libcurl-devel openssl-devel"
 	@echo "Arch:                    sudo pacman -S --needed base-devel pkgconf sqlite curl openssl"
-	@echo "MSYS2 UCRT64:            pacman -S --needed mingw-w64-ucrt-x86_64-curl"
+	@echo "MSYS2 UCRT64:            pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,make,pkgconf,sqlite3,curl,openssl}"
 
 clean:
-	rm -f $(OBJ) $(BIN)
-	rm -f build/test_*
-	@echo "Limpo."
+	@case "$(ARTIFACT_DIR)" in ''|/|.) echo "Diretório de artefatos inválido."; exit 1;; esac
+	rm -rf "$(ARTIFACT_DIR)"
+	@echo "Artefatos removidos de $(ARTIFACT_DIR)."

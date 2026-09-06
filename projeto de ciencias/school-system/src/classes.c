@@ -78,6 +78,40 @@ int classes_create(const char *name, const char *grade, ClassShift shift, Class 
     return classes_find_by_name(name, out);
 }
 
+int classes_update(int64_t id, const char *name, const char *grade, ClassShift shift, Class *out)
+{
+    if (id <= 0 || !name || !grade) return ERROR_INVALID_INPUT;
+    if (!validation_length_between(name, 1, 63)) return ERROR_TOO_LONG;
+    if (!validation_length_between(grade, 1, 31)) return ERROR_TOO_LONG;
+
+    sqlite3_stmt *st = NULL;
+    int rc = db_prepare("UPDATE classes SET name=?, grade=?, shift=? WHERE id=?;", &st);
+    if (rc != SUCCESS) return rc;
+    db_bind_text(st, 1, name);
+    db_bind_text(st, 2, grade);
+    db_bind_text(st, 3, class_shift_str(shift));
+    db_bind_int64(st, 4, (long long)id);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (rc == SQLITE_CONSTRAINT) return ERROR_ALREADY_EXISTS;
+    if (rc != SQLITE_DONE) return ERROR_DATABASE;
+    if (sqlite3_changes(database_get()) == 0) return ERROR_NOT_FOUND;
+    return classes_find_by_id(id, out);
+}
+
+int classes_delete(int64_t id)
+{
+    if (id <= 0) return ERROR_INVALID_INPUT;
+    sqlite3_stmt *st = NULL;
+    int rc = db_prepare("DELETE FROM classes WHERE id=?;", &st);
+    if (rc != SUCCESS) return rc;
+    db_bind_int64(st, 1, (long long)id);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return ERROR_DATABASE;
+    return sqlite3_changes(database_get()) ? SUCCESS : ERROR_NOT_FOUND;
+}
+
 /* helper extra */
 int classes_find_by_name(const char *name, Class *out)
 {

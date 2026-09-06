@@ -284,7 +284,24 @@ int users_create(const char *name, const char *phone,
         if (rc == SQLITE_CONSTRAINT) return ERROR_ALREADY_EXISTS;
         return ERROR_DATABASE;
     }
-    return users_find_by_phone(phone, out);
+    rc = users_find_by_phone(phone, out);
+    if (rc != SUCCESS) return rc;
+
+    /* Estes perfis são necessários para vínculos de turmas e tarefas.
+     * Criá-los aqui garante o mesmo resultado para API, CLI e testes. */
+    if (type == USER_TYPE_PROF || type == USER_TYPE_STUD) {
+        const char *sql = type == USER_TYPE_PROF
+            ? "INSERT INTO teachers(user_id) VALUES(?);"
+            : "INSERT INTO students(user_id) VALUES(?);";
+        st = NULL;
+        rc = db_prepare(sql, &st);
+        if (rc != SUCCESS) return rc;
+        db_bind_int64(st, 1, (long long)out->id);
+        rc = sqlite3_step(st);
+        sqlite3_finalize(st);
+        if (rc != SQLITE_DONE) return ERROR_DATABASE;
+    }
+    return SUCCESS;
 }
 
 int users_find_by_phone(const char *phone, User *out)
@@ -300,6 +317,51 @@ int users_find_by_id(int64_t id, User *out)
     return fetch_user_by_sql(
         "SELECT id, name, phone, user_type, status, created_at "
         "FROM users WHERE id=? LIMIT 1;", buf, out);
+}
+
+int users_update(int64_t id, const char *name, const char *phone,
+                 UserType type, const char *plain_password_or_null, User *out)
+{
+    if (id <= 0 || !name || !phone || type == USER_TYPE_INVALID) return ERROR_INVALID_INPUT;
+    if (!validation_length_between(name, 1, 120)) return ERROR_TOO_LONG;
+    if (!validation_is_valid_phone(phone)) return ERROR_INVALID_PHONE;
+
+    char hash[128] = {0};
+    if (plain_password_or_null && *plain_password_or_null) {
+        int rc = users_hash_password(plain_password_or_null, hash, sizeof hash);
+        if (rc != SUCCESS) return rc;
+    }
+
+    sqlite3_stmt *st = NULL;
+    int rc = db_prepare(
+        "UPDATE users SET name=?, phone=?, user_type=?, "
+        "password_hash=COALESCE(?, password_hash) WHERE id=?;", &st);
+    if (rc != SUCCESS) return rc;
+    db_bind_text(st, 1, name);
+    db_bind_text(st, 2, phone);
+    db_bind_text(st, 3, user_type_str(type));
+    if (hash[0]) db_bind_text(st, 4, hash); else db_bind_null(st, 4);
+    db_bind_int64(st, 5, (long long)id);
+    rc = sqlite3_step(st);
+    int changed = sqlite3_changes(database_get());
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return rc == SQLITE_CONSTRAINT ? ERROR_ALREADY_EXISTS : ERROR_DATABASE;
+    if (changed == 0) return ERROR_NOT_FOUND;
+    return users_find_by_id(id, out);
+}
+
+int users_delete(int64_t id)
+{
+    if (id <= 0) return ERROR_INVALID_INPUT;
+    sqlite3_stmt *st = NULL;
+    int rc = db_prepare("DELETE FROM users WHERE id=?;", &st);
+    if (rc != SUCCESS) return rc;
+    db_bind_int64(st, 1, (long long)id);
+    rc = sqlite3_step(st);
+    int changed = sqlite3_changes(database_get());
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) return ERROR_DATABASE;
+    return changed ? SUCCESS : ERROR_NOT_FOUND;
 }
 
 int users_set_status(int64_t id, UserStatus status)

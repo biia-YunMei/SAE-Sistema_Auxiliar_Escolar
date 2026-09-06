@@ -8,6 +8,7 @@
 #include "http_server.h"
 #include "auth.h"
 #include "tasks.h"
+#include "classes.h"
 #include "users.h"
 #include "database.h"
 #include "validation.h"
@@ -99,6 +100,19 @@ static int teacher_id_for_session(const AuthSession *s, long long *out)
     return rc;
 }
 
+static int student_class_for_session(const AuthSession *s, long long *out)
+{
+    sqlite3_stmt *st = NULL;
+    if (!s || !out || s->type != USER_TYPE_STUD ||
+        db_prepare("SELECT class_id FROM students WHERE user_id=?;", &st) != SUCCESS)
+        return ERROR_FORBIDDEN;
+    db_bind_int64(st, 1, (long long)s->user_id);
+    int rc = sqlite3_step(st) == SQLITE_ROW ? SUCCESS : ERROR_NOT_FOUND;
+    if (rc == SUCCESS) *out = sqlite3_column_int64(st, 0);
+    sqlite3_finalize(st);
+    return rc;
+}
+
 int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
 {
     AuthSession s;
@@ -109,6 +123,19 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
     if (!get_query_param(req->query, "class_id", qbuf, sizeof qbuf))
         return http_respond_error(res, 400, "class_id required");
     long long class_id = strtoll(qbuf, NULL, 10);
+    if (class_id <= 0) return http_respond_error(res, 400, "class_id required");
+
+    if (s.type == USER_TYPE_STUD) {
+        long long student_class_id = 0;
+        if (student_class_for_session(&s, &student_class_id) != SUCCESS ||
+            student_class_id != class_id)
+            return http_respond_error(res, 403, "student tasks only");
+    } else if (s.type == USER_TYPE_PROF) {
+        long long teacher_id = 0;
+        if (teacher_id_for_session(&s, &teacher_id) != SUCCESS ||
+            !classes_teacher_has_access(teacher_id, class_id))
+            return http_respond_error(res, 403, "not linked to class");
+    }
 
     Task *list = NULL; size_t n = 0;
     rc = tasks_list_by_class((int64_t)class_id, false, &list, &n);
@@ -212,7 +239,7 @@ int ctrl_tasks_update(const HttpRequest *req, HttpResponse *res, const char *id_
     if (rc == ERROR_FORBIDDEN) return http_respond_error(res, 403, "not owner");
     if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "not found");
     if (rc != SUCCESS)          return http_respond_error(res, 400, "update failed");
-    return http_respond_json(res, 200, "{\"ok\":true}");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"task updated\"}");
 }
 
 int ctrl_tasks_delete(const HttpRequest *req, HttpResponse *res, const char *id_str)
@@ -233,5 +260,5 @@ int ctrl_tasks_delete(const HttpRequest *req, HttpResponse *res, const char *id_
     if (rc == ERROR_FORBIDDEN) return http_respond_error(res, 403, "not owner");
     if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "not found");
     if (rc != SUCCESS)          return http_respond_error(res, 400, "delete failed");
-    return http_respond_json(res, 200, "{\"ok\":true}");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"task deleted\"}");
 }

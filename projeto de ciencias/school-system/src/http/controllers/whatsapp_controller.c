@@ -65,8 +65,8 @@ static int require_coordinator(const HttpRequest *req, HttpResponse *res)
     if (!req->auth) return http_respond_error(res, 401, "missing authorization");
     if (auth_session_resolve(req->auth, &session) != SUCCESS)
         return http_respond_error(res, 401, "invalid session");
-    if (session.type != USER_TYPE_COORD)
-        return http_respond_error(res, 403, "coordinator only");
+    if (session.type != USER_TYPE_COORD && session.type != USER_TYPE_PROF)
+        return http_respond_error(res, 403, "forbidden");
     return SUCCESS;
 }
 

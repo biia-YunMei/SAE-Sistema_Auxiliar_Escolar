@@ -22,6 +22,34 @@ int wr_tasks_delete(const HttpRequest *req, HttpResponse *res)
     return ctrl_tasks_delete(req, res, p);
 }
 
+int wr_users_update(const HttpRequest *req, HttpResponse *res)
+{
+    const char *id = req->path + strlen("/api/users/");
+    if (!*id) return http_respond_error(res, 400, "id required");
+    return ctrl_users_update(req, res, id);
+}
+
+int wr_users_delete(const HttpRequest *req, HttpResponse *res)
+{
+    const char *id = req->path + strlen("/api/users/");
+    if (!*id) return http_respond_error(res, 400, "id required");
+    return ctrl_users_delete(req, res, id);
+}
+
+int wr_classes_update(const HttpRequest *req, HttpResponse *res)
+{
+    const char *id = req->path + strlen("/api/classes/");
+    if (!*id) return http_respond_error(res, 400, "id required");
+    return ctrl_classes_update(req, res, id);
+}
+
+int wr_classes_delete(const HttpRequest *req, HttpResponse *res)
+{
+    const char *id = req->path + strlen("/api/classes/");
+    if (!*id) return http_respond_error(res, 400, "id required");
+    return ctrl_classes_delete(req, res, id);
+}
+
 int wr_classes_add_teacher(const HttpRequest *req, HttpResponse *res)
 {
     const char *p = req->path + strlen("/api/classes/");

@@ -55,10 +55,14 @@ static const Route g_routes[] = {
     { "POST", "/api/notices",                      ctrl_notices_create     },
     { "POST", "/api/users",                        ctrl_users_create       },
     { "GET",  "/api/users",                        ctrl_users_list         },
+    { "PUT",  "/api/users/:id",                    wr_users_update         },
+    { "DELETE", "/api/users/:id",                  wr_users_delete         },
     { "POST", "/api/students/class",               ctrl_students_assign_class },
 
     { "GET",  "/api/classes",                      ctrl_classes_list       },
     { "POST", "/api/classes",                      ctrl_classes_create     },
+    { "PUT",  "/api/classes/:id",                  wr_classes_update       },
+    { "DELETE","/api/classes/:id",                 wr_classes_delete       },
     { "POST", "/api/classes/:id/teachers",         wr_classes_add_teacher  },
     { "DELETE", "/api/classes/:id/teachers/:tid",  wr_classes_remove_teacher },
 

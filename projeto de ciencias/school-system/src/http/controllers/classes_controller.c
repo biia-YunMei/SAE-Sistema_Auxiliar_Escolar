@@ -54,12 +54,32 @@ static int require_coord(const HttpRequest *req, HttpResponse *res, AuthSession 
     return SUCCESS;
 }
 
+static int require_coord_or_prof(const HttpRequest *req, HttpResponse *res, AuthSession *out)
+{
+    if (!req->auth || auth_session_resolve(req->auth, out) != SUCCESS)
+        return http_respond_error(res, 401, "invalid session");
+    if (out->type != USER_TYPE_COORD && out->type != USER_TYPE_PROF)
+        return http_respond_error(res, 403, "forbidden");
+    return SUCCESS;
+}
+
+static int teacher_id_for_user(int64_t user_id, long long *teacher_id)
+{
+    sqlite3_stmt *statement = NULL;
+    if (!teacher_id || db_prepare("SELECT id FROM teachers WHERE user_id=?;", &statement) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_int64(statement, 1, user_id);
+    int found = sqlite3_step(statement) == SQLITE_ROW;
+    if (found) *teacher_id = sqlite3_column_int64(statement, 0);
+    sqlite3_finalize(statement);
+    return found ? SUCCESS : ERROR_NOT_FOUND;
+}
+
 int ctrl_classes_list(const HttpRequest *req, HttpResponse *res)
 {
     AuthSession s;
-    if (!req->auth) return http_respond_error(res, 401, "missing authorization");
-    if (auth_session_resolve(req->auth, &s) != SUCCESS)
-        return http_respond_error(res, 401, "invalid session");
+    int auth_rc = require_coord_or_prof(req, res, &s);
+    if (auth_rc != SUCCESS) return auth_rc;
 
     Class *list = NULL; size_t n = 0;
     if (classes_list(&list, &n) != SUCCESS)
@@ -88,7 +108,7 @@ int ctrl_classes_list(const HttpRequest *req, HttpResponse *res)
 int ctrl_classes_create(const HttpRequest *req, HttpResponse *res)
 {
     AuthSession s;
-    int rc = require_coord(req, res, &s);
+    int rc = require_coord_or_prof(req, res, &s);
     if (rc != SUCCESS) return rc;
 
     char name[64]={0}, grade[32]={0}, shift_s[16]={0};
@@ -101,11 +121,70 @@ int ctrl_classes_create(const HttpRequest *req, HttpResponse *res)
     if (rc == ERROR_ALREADY_EXISTS) return http_respond_error(res, 409, "class exists");
     if (rc != SUCCESS)              return http_respond_error(res, 400, "create failed");
 
+    /* O professor que criou a turma deve poder gerenciá-la imediatamente. */
+    if (s.type == USER_TYPE_PROF) {
+        long long teacher_id = 0;
+        if (teacher_id_for_user(s.user_id, &teacher_id) != SUCCESS ||
+            classes_link_teacher(teacher_id, c.id) != SUCCESS)
+            return http_respond_error(res, 400, "link failed");
+    }
+
     char out[256];
     snprintf(out, sizeof out,
         "{\"id\":%lld,\"name\":\"%s\",\"grade\":\"%s\",\"shift\":\"%s\"}",
         (long long)c.id, c.name, c.grade, class_shift_str(c.shift));
     return http_respond_json(res, 201, out);
+}
+
+static int class_management_allowed(const AuthSession *session, long long class_id)
+{
+    if (session->type == USER_TYPE_COORD) return 1;
+    long long teacher_id = 0;
+    return teacher_id_for_user(session->user_id, &teacher_id) == SUCCESS &&
+           classes_teacher_has_access(teacher_id, class_id);
+}
+
+int ctrl_classes_update(const HttpRequest *req, HttpResponse *res, const char *id_str)
+{
+    AuthSession session;
+    int rc = require_coord_or_prof(req, res, &session);
+    if (rc != SUCCESS) return rc;
+
+    long long class_id = strtoll(id_str, NULL, 10);
+    if (class_id <= 0) return http_respond_error(res, 400, "id required");
+    if (!class_management_allowed(&session, class_id))
+        return http_respond_error(res, 403, "forbidden");
+
+    char name[64] = {0}, grade[32] = {0}, shift_s[16] = {0};
+    if (!extract_str(req->body, "name", name, sizeof name))
+        return http_respond_error(res, 400, "name required");
+    if (!extract_str(req->body, "grade", grade, sizeof grade))
+        return http_respond_error(res, 400, "grade required");
+    if (!extract_str(req->body, "shift", shift_s, sizeof shift_s))
+        return http_respond_error(res, 400, "shift required");
+
+    Class updated;
+    rc = classes_update(class_id, name, grade, class_shift_from(shift_s), &updated);
+    if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "class not found");
+    if (rc == ERROR_ALREADY_EXISTS) return http_respond_error(res, 409, "class exists");
+    if (rc != SUCCESS) return http_respond_error(res, 400, "update failed");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"class updated\"}");
+}
+
+int ctrl_classes_delete(const HttpRequest *req, HttpResponse *res, const char *id_str)
+{
+    AuthSession session;
+    int rc = require_coord_or_prof(req, res, &session);
+    if (rc != SUCCESS) return rc;
+
+    long long class_id = strtoll(id_str, NULL, 10);
+    if (class_id <= 0) return http_respond_error(res, 400, "id required");
+    if (!class_management_allowed(&session, class_id))
+        return http_respond_error(res, 403, "forbidden");
+    rc = classes_delete(class_id);
+    if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "class not found");
+    if (rc != SUCCESS) return http_respond_error(res, 400, "delete failed");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"class deleted\"}");
 }
 
 int ctrl_classes_add_teacher(const HttpRequest *req, HttpResponse *res, const char *id_str)

@@ -3,6 +3,7 @@
 #include "auth.h"
 #include "database.h"
 #include "users.h"
+#include "classes.h"
 #include "controllers.h"
 
 #include <stdio.h>
@@ -27,13 +28,24 @@ int ctrl_students_assign_class(const HttpRequest *req, HttpResponse *res)
     AuthSession session;
     if (!req->auth || auth_session_resolve(req->auth, &session) != SUCCESS)
         return http_respond_error(res, 401, "invalid session");
-    if (session.type != USER_TYPE_COORD)
-        return http_respond_error(res, 403, "coordinator only");
-
     long long user_id = json_int(req->body, "user_id");
     long long class_id = json_int(req->body, "class_id");
     if (user_id <= 0 || class_id <= 0)
         return http_respond_error(res, 400, "user_id and class_id are required");
+
+    if (session.type == USER_TYPE_PROF) {
+        sqlite3_stmt *teacher = NULL;
+        if (db_prepare("SELECT id FROM teachers WHERE user_id=?;", &teacher) != SUCCESS)
+            return http_respond_error(res, 500, "database error");
+        db_bind_int64(teacher, 1, session.user_id);
+        int found = sqlite3_step(teacher) == SQLITE_ROW;
+        long long teacher_id = found ? sqlite3_column_int64(teacher, 0) : 0;
+        sqlite3_finalize(teacher);
+        if (!found || !classes_teacher_has_access(teacher_id, class_id))
+            return http_respond_error(res, 403, "not linked to class");
+    } else if (session.type != USER_TYPE_COORD) {
+        return http_respond_error(res, 403, "forbidden");
+    }
 
     User student;
     if (users_find_by_id(user_id, &student) != SUCCESS || student.type != USER_TYPE_STUD)

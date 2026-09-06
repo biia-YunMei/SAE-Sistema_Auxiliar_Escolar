@@ -9,6 +9,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#if defined(_WIN32)
+#include <direct.h>
+#endif
+
 static int passed = 0, failed = 0;
 #define CHECK(expr) do { \
     if (expr) { passed++; } \
@@ -22,11 +26,20 @@ static long file_size(const char *path)
     return (long)st.st_size;
 }
 
+static int make_dir(const char *path)
+{
+#if defined(_WIN32)
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
+
 int main(void)
 {
     const char *dir = "logs/test";
-    mkdir("logs");
-    mkdir(dir);
+    (void)make_dir("logs");
+    (void)make_dir(dir);
 
     logger_init(dir, LOG_DEBUG);
     log_debug("linha debug");

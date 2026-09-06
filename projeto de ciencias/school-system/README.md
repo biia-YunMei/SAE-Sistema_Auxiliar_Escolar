@@ -1,4 +1,4 @@
-# School System Backend (C11)
+# SAE — Sistema Auxiliar Escolar (C11)
 
 Back-end escrito **inteiramente em C** de um sistema escolar integrado ao
 WhatsApp, com coordenação, professores, alunos, banco de dados e
@@ -25,7 +25,7 @@ Núcleo do sistema que:
 
 ```
 ┌──────────────────────────────┐
-│ HTTP/1.1 (POSIX sockets)    │   src/http/server.c
+│ HTTP/1.1 (sockets Linux/Windows) │ src/http/server.c
 ├──────────────────────────────┤
 │ Roteador + controllers       │   src/http/{router,controllers}/*.c
 ├──────────────────────────────┤
@@ -50,9 +50,8 @@ Módulos isolados (não conhecem o banco):
 school-system/
 ├── Makefile                # gcc, -Wall -Wextra -Wpedantic, alvo sanitize
 ├── README.md
-├── .env.example
 ├── .gitignore
-├── ARCHITECTURE.md         # detalhamento
+├── docs/                   # uso, permissões, configuração e portabilidade
 ├── include/                # headers públicos (config, error, server, ai, ...)
 ├── src/
 │   ├── main.c              # bootstrap: config/logger/db/whatsapp/http
@@ -70,14 +69,19 @@ school-system/
 │       ├── controllers/{controllers.h, auth, users, classes, tasks, whatsapp, wrappers}.c
 │       ├── repositories/*.c
 │       └── services/*.c
-├── data/                   # school.db
-├── logs/                   # school-YYYYMMDD.log
+├── data/                   # banco SQLite local (ignorado pelo Git)
+├── logs/                   # logs locais (ignorados pelo Git)
 └── tests/                  # test_validation, test_error, test_logger,
                             # test_database, test_auth, test_permissions,
                             # test_tasks, test_http, test_whatsapp, test_ai
 ```
 
-## 4. Dependências
+Documentação complementar:
+
+* [Uso e permissões](docs/USO_E_PERMISSOES.md)
+* [Configuração e portabilidade](docs/CONFIGURACAO_E_PORTABILIDADE.md)
+
+## 4. Dependências e plataformas
 
 | Obrigatória | Função |
 |---|---|
@@ -90,7 +94,7 @@ school-system/
 | libmicrohttpd-dev | — (não usamos; HTTP em C puro) |
 | libcjson-dev | — (não usamos; parser JSON mínimo próprio) |
 
-### Ubuntu, Debian, Linux Mint e Pop!_OS
+### Linux — Ubuntu, Debian, Linux Mint e Pop!_OS
 
 ```bash
 sudo apt update
@@ -100,9 +104,37 @@ make sanitize
 make
 ```
 
-O binário resultante é `build/school-backend`. As bibliotecas cURL e OpenSSL
+O binário resultante é `../school-system-artifacts/sae`. As bibliotecas cURL e OpenSSL
 são detectadas automaticamente pelo `pkg-config`; o sistema continua compilando
 sem cURL quando os adaptadores remotos não forem habilitados.
+
+### Outras distribuições Linux
+
+```bash
+# Fedora
+sudo dnf install -y gcc make pkg-config sqlite-devel libcurl-devel openssl-devel
+
+# Arch Linux / Manjaro
+sudo pacman -S --needed base-devel pkgconf sqlite curl openssl
+```
+
+No NixOS, entre no ambiente de desenvolvimento definido pelo projeto e execute
+`make`. O Makefile também evita que caminhos com espaços sejam quebrados pelos
+parâmetros do linker do Nix.
+
+### Windows
+
+Use o terminal **MSYS2 UCRT64**:
+
+```bash
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make \
+  mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-sqlite3 \
+  mingw-w64-ucrt-x86_64-curl mingw-w64-ucrt-x86_64-openssl
+make
+```
+
+O executável será `../school-system-artifacts/sae.exe`. Adicione essa pasta ao `PATH` para usar
+o comando `sae` em qualquer diretório.
 
 ## 5. Compilação
 
@@ -114,6 +146,10 @@ make tests      # roda todos os test_*
 make clean
 ```
 
+Por padrão, o executável, objetos e testes compilados são gerados em
+`../school-system-artifacts`, uma pasta fora do repositório. Para escolher
+outro local, use `make ARTIFACT_DIR=/caminho/desejado`.
+
 Para ativar o adapter WhatsApp/IA remoto:
 
 ```bash
@@ -121,42 +157,112 @@ make CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -DWHATSAPP_USE_CURL -DAI_USE_REMO
      LDFLAGS='-lcurl'
 ```
 
-## 6. Execução
+## 6. Execução e primeiros passos
 
 ```bash
-cp .env.example .env       # edite credenciais
+# Crie .env apenas se precisar alterar configurações ou integrar serviços externos
 make
-./build/school-backend
+sae servidor
 ```
 
 Sinais `SIGINT`/`SIGTERM` finalizam o servidor limpando recursos.
 
-## 7. Endpoints
+Em outro terminal, crie o primeiro coordenador. Este é o único comando que
+pode ser usado sem uma sessão iniciada:
+
+```bash
+sae -ca -n "Nome do coordenador" -p +5566999999999 -s sua_senha
+sae login -p +5566999999999 -s sua_senha
+```
+
+Depois do login, a sessão fica salva localmente em `.sae-session`. Use
+`sae logout` ao terminar.
+
+## 7. Comandos do terminal
+
+Use `sae --help` para consultar todos os comandos. Os principais são:
+
+```bash
+# Usuários — somente COORD
+sae usuario criar -n NOME -p TELEFONE -t COORD|PROF|STUD [-s SENHA]
+sae usuario listar
+sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]
+sae usuario excluir -u ID
+
+# Turmas — COORD e PROF
+sae turma criar -n NOME -g SERIE [-t MANHA|TARDE|NOITE|INTEGRAL]
+sae turma listar
+sae turma editar -i ID -n NOME -g SERIE -t MANHA|TARDE|NOITE|INTEGRAL
+sae turma excluir -i ID
+sae turma vincular -c ID_TURMA -u ID_USUARIO_PROF  # somente COORD
+
+# Alunos — COORD ou professor vinculado à turma
+sae aluno vincular -u ID_ALUNO -c ID_TURMA
+
+# Tarefas — COORD e PROF
+sae tarefa criar -c ID_TURMA -m MATERIA -n TITULO -v AAAA-MM-DD [-d DESCRICAO]
+sae tarefa criar -c ID_TURMA -u ID_PROF -m MATERIA -n TITULO -v AAAA-MM-DD
+sae tarefa listar -c ID_TURMA
+sae tarefa editar -i ID -m MATERIA -n TITULO -v AAAA-MM-DD [-d DESCRICAO]
+sae tarefa excluir -i ID
+
+# WhatsApp — COORD e PROF
+sae whatsapp enviar -p TELEFONE -m MENSAGEM
+sae whatsapp turma -c ID_TURMA -m MENSAGEM
+```
+
+O professor só pode administrar turmas vinculadas a ele e tarefas sob sua
+responsabilidade. O aluno só pode listar tarefas da própria turma. Todos os
+cargos podem usar `sae logout` e `sae --help`.
+
+### Visual do terminal
+
+Em terminais interativos com UTF-8, o SAE mostra molduras Unicode nas
+listagens, mensagens de erro e confirmações. Em ambiente incompatível ou quando
+a saída é redirecionada, usa texto simples automaticamente.
+
+```bash
+SAE_UI=unicode sae turma listar  # força as molduras Unicode
+SAE_UI=plain sae turma listar    # força a saída simples
+```
+
+## 8. Endpoints
 
 | Método | Caminho | Quem | Descrição |
 |--------|---------|------|-----------|
 | GET    | /api/health              | público | status |
 | POST   | /api/auth                | público | login por telefone |
+| POST   | /api/auth/logout         | logado | encerra a sessão |
+| POST   | /api/bootstrap           | público | cria o primeiro coordenador |
 | POST   | /api/users               | COORD   | cadastra usuário |
-| GET    | /api/users               | COORD   | lista usuários |
-| GET    | /api/classes             | logado  | lista turmas |
-| POST   | /api/classes             | COORD   | cria turma |
+| GET    | /api/users               | COORD/PROF | lista usuários |
+| PUT/DELETE | /api/users/:id        | COORD   | edita/exclui usuário |
+| GET    | /api/classes             | COORD/PROF | lista turmas |
+| POST   | /api/classes             | COORD/PROF | cria turma |
+| PUT/DELETE | /api/classes/:id      | COORD/PROF vinculado | edita/exclui turma |
 | POST   | /api/classes/:id/teachers| COORD   | vincula professor |
 | DELETE | /api/classes/:id/teachers/:tid | COORD | remove vínculo |
-| GET    | /api/tasks?class_id=X   | logado  | lista tarefas da turma |
+| GET    | /api/tasks?class_id=X   | conforme turma/cargo | lista tarefas da turma |
 | POST   | /api/tasks               | PROF/COORD | cria tarefa |
 | PUT    | /api/tasks/:id           | PROF/COORD | atualiza tarefa |
 | DELETE | /api/tasks/:id           | PROF/COORD | remove tarefa |
 | POST   | /api/whatsapp/webhook    | externo | recebe mensagem |
 
-## 8. Autenticação
+## 9. Autenticação e permissões
 
 * Login: `POST /api/auth` com `{phone, password}`.
 * Token opaco (hex 64 chars) devolvido e usado em `Authorization: Bearer <token>`.
 * Sessões em memória com TTL (`SESSION_TIMEOUT_MIN`).
-* **Toda verificação de permissão passa pelo back-end.**
+* **Toda rota, exceto saúde, login, bootstrap e webhook, exige login.**
+* **Toda verificação de permissão passa pelo back-end**, não apenas pelo CLI.
 
-## 9. Banco de Dados
+| Cargo | Pode executar |
+|---|---|
+| `COORD` | Todos os comandos administrativos e operacionais. |
+| `PROF` | Listar usuários; criar/listar/editar/excluir suas turmas; vincular alunos em suas turmas; criar/listar/editar/excluir suas tarefas; enviar WhatsApp. |
+| `STUD` | Listar apenas as tarefas da própria turma. |
+
+## 10. Banco de Dados
 
 SQLite com `PRAGMA foreign_keys=ON` e WAL. Migrations idempotentes em
 `schema_version`. Tabelas principais:
@@ -167,7 +273,7 @@ SQLite com `PRAGMA foreign_keys=ON` e WAL. Migrations idempotentes em
 * `tasks`, `exams`, `assignments`, `notices`
 * `messages(auditoria)`, `conversations(state machine)`
 
-## 10. Segurança
+## 11. Segurança
 
 * **Todas** entradas validadas: telefone, data ISO, hora, comprimento,
   charset, IDs.
@@ -179,7 +285,7 @@ SQLite com `PRAGMA foreign_keys=ON` e WAL. Migrations idempotentes em
 * Credenciais fora do código (env vars / `.env`).
 * HTTPS/TLS é responsabilidade do reverse proxy em produção.
 
-## 11. Fluxos Implementados
+## 12. Fluxos Implementados
 
 ```
 Coordenador (painel / API)
@@ -201,7 +307,7 @@ Aluno (WhatsApp)
    └── resposta enviada pelo WhatsApp
 ```
 
-## 12. Testes
+## 13. Testes
 
 ```bash
 make tests
@@ -220,14 +326,14 @@ Cobre:
 * WhatsApp (validação, tamanho, eco)
 * IA (parse, JSON, política anti-resposta-pronta)
 
-## 13. Limitações Conhecidas
+## 14. Limitações Conhecidas
 
 * Áudio/imagem ainda em stub (pipeline pronto para plugar serviços).
 * Sem HTTPS embutido (use nginx/Caddy em produção).
 * Sessões em memória (não sobrevivem a restart).
 * Hash de senha didático (SHA-256+salt) — migrar para bcrypt em produção.
 
-## 14. Roadmap (futuro)
+## 15. Roadmap (futuro)
 
 * Persistir sessões (Redis/SQLite).
 * Painel web administrativo usando os endpoints HTTP.
