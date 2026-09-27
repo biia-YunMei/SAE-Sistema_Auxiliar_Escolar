@@ -63,6 +63,18 @@
             Comunicados
           </button>
         </li>
+        <li class="nav-item">
+          <button
+            class="nav-link"
+            id="tab-professores"
+            data-bs-toggle="tab"
+            data-bs-target="#page-professores"
+            type="button"
+            role="tab"
+          >
+            Professores
+          </button>
+        </li>
       </ul>
 
       <div class="tab-content espacamento-cards" id="mainTabsContent">
@@ -83,6 +95,12 @@
               <div class="stat-card">
                 <div class="stat-number" id="stat-turmas">0</div>
                 <div class="stat-label">Turmas com comunicados</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="stat-card">
+                <div class="stat-number" id="stat-professores">0</div>
+                <div class="stat-label">Professores cadastrados</div>
               </div>
             </div>
           </div>
@@ -217,6 +235,100 @@
             </div>
           </div>
         </div>
+
+        <!-- PROFESSORES -->
+        <div class="tab-pane fade" id="page-professores" role="tabpanel">
+          <div class="row g-4">
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header">Novo professor</div>
+                <div class="card-body">
+                  <form id="formProfessor" autocomplete="off">
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >Nome <span class="text-danger">*</span></label
+                      >
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="profNome"
+                        placeholder="Ex: Maria Silva"
+                        required
+                      />
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >WhatsApp <span class="text-danger">*</span></label
+                      >
+                      <input
+                        type="tel"
+                        class="form-control"
+                        id="profWhats"
+                        placeholder="(11) 91234-5678"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        maxlength="15"
+                        required
+                      />
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label">E-mail</label>
+                      <input
+                        type="email"
+                        class="form-control"
+                        id="profEmail"
+                        placeholder="professor@escola.com"
+                      />
+                    </div>
+                    <button type="submit" class="btn btn-teal w-100">
+                      Cadastrar professor
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-7">
+              <div class="card">
+                <div
+                  class="card-header d-flex justify-content-between align-items-center flex-wrap"
+                >
+                  <span>Professores cadastrados</span>
+                  <span class="badge badge-teal" id="totalProfessoresBadge"
+                    >0</span
+                  >
+                </div>
+                <div class="card-body">
+                  <input
+                    type="text"
+                    class="form-control mb-3"
+                    id="buscaProfessores"
+                    placeholder="Buscar por nome ou e-mail..."
+                  />
+                  <div class="table-scroll">
+                    <table class="table table-hover">
+                      <thead>
+                        <tr>
+                          <th style="padding-left: 1.25rem">#</th>
+                          <th>Nome</th>
+                          <th>WhatsApp</th>
+                          <th>E-mail</th>
+                          <th class="acoes-col" style="width: 80px">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tabelaProfessores"></tbody>
+                    </table>
+                  </div>
+                  <div
+                    id="emptyProfessores"
+                    class="text-muted text-center py-4"
+                  >
+                    Nenhum professor cadastrado.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -224,7 +336,6 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- MODAIS (Ver/Editar) -->
-    <!-- Ver Mensagem -->
     <div
       class="modal fade"
       id="modalVerMensagem"
@@ -250,7 +361,6 @@
         </div>
       </div>
     </div>
-    <!-- Editar Comunicado -->
     <div
       class="modal fade"
       id="modalEditarComunicado"
@@ -364,7 +474,7 @@
           const anos = new Set()
           comunicados.forEach((c) => {
             c.turmas.forEach((t) => {
-              const ano = t.split(' ')[0] // pega o ano (ex: "9º")
+              const ano = t.split(' ')[0]
               if (ano) anos.add(ano)
             })
           })
@@ -411,21 +521,41 @@
         }
 
         function atualizarDashboard() {
-          const items = comunicados.map((c) => ({
-            tipo: 'comunicado',
-            desc: `Comunicado “${c.titulo}” para ${formatarTurmas(c.turmas)}`,
-            data: formatDate(c.data),
-          }))
-          const recentes = items.slice(-5).reverse()
+          const items = []
+
+          comunicados.forEach((c) => {
+            items.push({
+              tipo: 'Comunicado',
+              desc: `Comunicado “${c.titulo}” para ${formatarTurmas(c.turmas)}`,
+              data: formatDate(c.data),
+              sortKey: c.data || '',
+            })
+          })
+
+          ;(window.__professores || []).forEach((p) => {
+            const raw = p.created_at || ''
+            items.push({
+              tipo: 'Professor',
+              desc: `Professor “${p.nome}” cadastrado`,
+              data: raw ? formatDate(raw.slice(0, 10)) : '—',
+              sortKey: raw,
+            })
+          })
+
+          const recentes = items
+            .sort((a, b) => String(b.sortKey).localeCompare(String(a.sortKey)))
+            .slice(0, 5)
+
           if (recentes.length === 0) {
             ultimas.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Nenhuma atividade registrada.</td></tr>`
             return
           }
+
           ultimas.innerHTML = recentes
             .map(
               (item) => `
           <tr>
-            <td style="padding-left:1.25rem"><span class="badge badge-teal">Comunicado</span></td>
+            <td style="padding-left:1.25rem"><span class="badge badge-teal">${item.tipo}</span></td>
             <td>${item.desc}</td>
             <td class="text-muted small">${item.data}</td>
           </tr>
@@ -461,15 +591,12 @@
           document.getElementById('editComTitulo').value = c.titulo
           document.getElementById('editComMensagem').value = c.mensagem
           document.getElementById('editComData').value = c.data
-          // Preencher o seletor
           if (c.turmas.length > 0) {
             const primeira = c.turmas[0]
             const parts = primeira.split(' ')
             const ano = parts[0]
             const letras = c.turmas.map((t) => t.split(' ')[1]).filter(Boolean)
-            // Remover duplicatas
             const letrasUnicas = [...new Set(letras)]
-            // Gerar o seletor com esses valores
             gerarSelectorTurmas('editTurmasComunicado', ano, letrasUnicas)
           } else {
             gerarSelectorTurmas('editTurmasComunicado')
@@ -535,7 +662,6 @@
             data,
           })
           form.reset()
-          // Resetar seletor
           gerarSelectorTurmas('turmasComunicado')
           render()
           showToast('Comunicado enviado!', 'success')
@@ -544,10 +670,18 @@
         busca.addEventListener('input', render)
 
         window.saeCoordenacaoUI = {
-          setNotices(items) { comunicados = items; render() },
+          setNotices(items) {
+            comunicados = items
+            render()
+          },
+          refreshDashboard() {
+            atualizarDashboard()
+          },
         }
 
         document.addEventListener('DOMContentLoaded', function () {
+          initTurmas()
+
           if (!saeRequireLogin()) return
           setDataAtual()
           const hoje = new Date().toISOString().split('T')[0]
@@ -555,40 +689,6 @@
           document.getElementById('comData').value = hoje
           document.getElementById('editComData').setAttribute('min', hoje)
 
-          // Dados de exemplo
-          /* Comunicados ainda serão persistidos quando o endpoint de comunicados for ativado. */
-          /* if (comunicados.length === 0) {
-            const turmasExemplo = [
-              ['6º A', '6º B'],
-              ['7º A'],
-              ['8º A', '8º B'],
-              ['9º A'],
-              ['1º EM A', '1º EM B'],
-              ['2º EM A'],
-              ['3º EM A', '3º EM B'],
-            ]
-            const titulos = [
-              'Reunião de pais',
-              'Prova final',
-              'Festa junina',
-              'Entrega de notas',
-              'Plantão de dúvidas',
-              'Visita técnica',
-            ]
-            for (let i = 0; i < 6; i++) {
-              const d = new Date()
-              d.setDate(d.getDate() + i)
-              comunicados.push({
-                id: idCounter++,
-                turmas: turmasExemplo[i % turmasExemplo.length],
-                titulo: titulos[i % titulos.length],
-                mensagem: `Detalhes do comunicado: ${titulos[i % titulos.length]}`,
-                data: d.toISOString().split('T')[0],
-              })
-            }
-          } */
-
-          initTurmas()
           render()
         })
       })()
@@ -605,25 +705,247 @@
             const grouped = new Map()
             ;(data.items || []).forEach((notice) => {
               const key = `${notice.title}|${notice.content}|${notice.created_at}`
-              const item = grouped.get(key) || { id: notice.id, turmas: [], titulo: notice.title, mensagem: notice.content, data: notice.created_at.slice(0, 10) }
-              item.turmas.push(notice.class_name || 'Todas'); grouped.set(key, item)
+              const item = grouped.get(key) || {
+                id: notice.id,
+                turmas: [],
+                titulo: notice.title,
+                mensagem: notice.content,
+                data: notice.created_at.slice(0, 10),
+              }
+              item.turmas.push(notice.class_name || 'Todas')
+              grouped.set(key, item)
             })
             window.saeCoordenacaoUI.setNotices([...grouped.values()])
-          } catch (error) { showToast(error.message, 'danger') }
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
         }
-        document.getElementById('formComunicado').addEventListener('submit', async (event) => {
-          event.preventDefault(); event.stopImmediatePropagation()
-          const nomes = getTurmasSelecionadas('turmasComunicado')
-          const title = document.getElementById('comTitulo').value.trim()
-          const content = document.getElementById('comMensagem').value.trim()
-          const selected = classes.filter((item) => nomes.includes(item.name))
-          if (!title || !content || !selected.length) return showToast('Selecione uma turma cadastrada e preencha os campos.', 'warning')
-          try {
-            await Promise.all(selected.map((item) => saeRequest('/notices', { method: 'POST', body: JSON.stringify({ class_id: item.id, title, content }) })))
-            event.target.reset(); gerarSelectorTurmas('turmasComunicado'); await loadNotices(); showToast('Comunicado enviado!', 'success')
-          } catch (error) { showToast(error.message, 'danger') }
-        }, true)
+        document.getElementById('formComunicado').addEventListener(
+          'submit',
+          async (event) => {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+            const nomes = getTurmasSelecionadas('turmasComunicado')
+            const title = document.getElementById('comTitulo').value.trim()
+            const content = document
+              .getElementById('comMensagem')
+              .value.trim()
+            const selected = classes.filter((item) =>
+              nomes.includes(item.name),
+            )
+            if (!title || !content || !selected.length)
+              return showToast(
+                'Selecione uma turma cadastrada e preencha os campos.',
+                'warning',
+              )
+            try {
+              await Promise.all(
+                selected.map((item) =>
+                  saeRequest('/notices', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      class_id: item.id,
+                      title,
+                      content,
+                    }),
+                  }),
+                ),
+              )
+              event.target.reset()
+              gerarSelectorTurmas('turmasComunicado')
+              await loadNotices()
+              showToast('Comunicado enviado!', 'success')
+            } catch (error) {
+              showToast(error.message, 'danger')
+            }
+          },
+          true,
+        )
         window.addEventListener('load', () => setTimeout(loadNotices, 0))
+      })()
+    </script>
+    <script>
+      ;(function () {
+        'use strict'
+        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
+
+        let professores = []
+
+        const tabela = document.getElementById('tabelaProfessores')
+        const empty = document.getElementById('emptyProfessores')
+        const totalBadge = document.getElementById('totalProfessoresBadge')
+        const statProf = document.getElementById('stat-professores')
+        const busca = document.getElementById('buscaProfessores')
+        const form = document.getElementById('formProfessor')
+        const inputNome = document.getElementById('profNome')
+        const inputWhats = document.getElementById('profWhats')
+        const inputEmail = document.getElementById('profEmail')
+
+        function escapeHtml(str) {
+          return String(str ?? '').replace(
+            /[&<>"']/g,
+            (ch) =>
+              ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+              })[ch],
+          )
+        }
+
+        // ─── MÁSCARA WHATSAPP: (xx) xxxxx-xxxx ───
+        function aplicarMascara(valor) {
+          const digitos = String(valor || '').replace(/\D/g, '').slice(0, 11)
+          if (!digitos) return ''
+          if (digitos.length <= 2) return `(${digitos}`
+          if (digitos.length <= 7)
+            return `(${digitos.slice(0, 2)}) ${digitos.slice(2)}`
+          return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`
+        }
+
+        if (inputWhats) {
+          // (1) Bloqueia teclas imprimíveis que não sejam dígito.
+          //     IMPORTANTE: só testa teclas de 1 caractere — assim
+          //     "Backspace", "Tab", "Unidentified" (IME móvel), "F5"
+          //     etc. continuam funcionando normalmente.
+          inputWhats.addEventListener('keydown', function (e) {
+            if (e.ctrlKey || e.metaKey || e.altKey) return
+            if (e.key && e.key.length === 1 && !/\d/.test(e.key)) {
+              e.preventDefault()
+            }
+          })
+
+          // (2) Bloqueia inserções de texto não-numérico via beforeinput.
+          //     Cobre IME móvel, autofill, ditado por voz.
+          //     Backspace/Delete têm e.data = null, então passam livres.
+          inputWhats.addEventListener('beforeinput', function (e) {
+            if (e.inputType === 'insertFromPaste') return // tratado abaixo
+            if (e.data != null && /\D/.test(e.data)) {
+              e.preventDefault()
+            }
+          })
+
+          // (3) Sanitiza colagem: aceita "(11) 91234-5678" ou "11912345678"
+          inputWhats.addEventListener('paste', function (e) {
+            e.preventDefault()
+            const texto =
+              (e.clipboardData || window.clipboardData).getData('text') || ''
+            this.value = aplicarMascara(texto)
+            this.dispatchEvent(new Event('input', { bubbles: true }))
+          })
+
+          // (4) Rede de segurança: reaplica a máscara a cada alteração
+          //     (digitação, autofill, correção ortográfica, etc.)
+          inputWhats.addEventListener('input', function () {
+            this.value = aplicarMascara(this.value)
+          })
+        }
+
+        function render() {
+          const filtro = busca.value.toLowerCase().trim()
+          const lista = [...professores].sort((a, b) =>
+            String(b.created_at || '').localeCompare(String(a.created_at || '')),
+          )
+          const filtrados = lista.filter(
+            (p) =>
+              p.nome.toLowerCase().includes(filtro) ||
+              (p.email || '').toLowerCase().includes(filtro),
+          )
+
+          tabela.innerHTML = filtrados
+            .map(
+              (p, idx) => `
+          <tr>
+            <td style="padding-left:1.25rem">${idx + 1}</td>
+            <td>${escapeHtml(p.nome)}</td>
+            <td>${escapeHtml(p.whatsapp || '—')}</td>
+            <td>${p.email ? escapeHtml(p.email) : '<span class="text-muted">—</span>'}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                <button class="btn-circle-sm btn-danger" onclick="excluirProfessor(${p.id})" title="Excluir">
+                  <i class="bi bi-trash3-fill"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `,
+            )
+            .join('')
+
+          empty.style.display = filtrados.length ? 'none' : 'block'
+          totalBadge.textContent = professores.length
+          if (statProf) statProf.textContent = professores.length
+
+          window.__professores = professores
+          if (
+            window.saeCoordenacaoUI &&
+            window.saeCoordenacaoUI.refreshDashboard
+          ) {
+            window.saeCoordenacaoUI.refreshDashboard()
+          }
+        }
+
+        async function loadProfessores() {
+          try {
+            const data = await saeRequest('/teachers')
+            professores = (data.items || []).map((t) => ({
+              id: t.id,
+              nome: t.name || t.nome || '',
+              whatsapp: aplicarMascara(t.whatsapp || t.phone || ''),
+              email: t.email || '',
+              created_at: t.created_at || t.createdAt || '',
+            }))
+            render()
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        }
+
+        window.excluirProfessor = async function (id) {
+          if (!confirm('Deseja excluir este professor?')) return
+          try {
+            await saeRequest(`/teachers/${id}`, { method: 'DELETE' })
+            await loadProfessores()
+            showToast('Professor excluído!', 'danger')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        }
+
+        form.addEventListener('submit', async function (event) {
+          event.preventDefault()
+          const nome = inputNome.value.trim()
+          const whatsapp = inputWhats.value.trim()
+          const email = inputEmail.value.trim()
+
+          if (!nome || !whatsapp) {
+            showToast('Preencha nome e WhatsApp.', 'warning')
+            return
+          }
+          const digitos = whatsapp.replace(/\D/g, '')
+          if (digitos.length < 10) {
+            showToast('WhatsApp inválido. Use DDD + número.', 'warning')
+            return
+          }
+
+          try {
+            await saeRequest('/teachers', {
+              method: 'POST',
+              body: JSON.stringify({ name: nome, whatsapp, email }),
+            })
+            form.reset()
+            await loadProfessores()
+            showToast('Professor cadastrado!', 'success')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        })
+
+        busca.addEventListener('input', render)
+
+        window.addEventListener('load', () => setTimeout(loadProfessores, 0))
       })()
     </script>
   </body>
