@@ -258,7 +258,6 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- MODAIS (Ver/Editar) -->
-    <!-- Ver Tarefa -->
     <div
       class="modal fade"
       id="modalVerTarefa"
@@ -284,7 +283,6 @@
         </div>
       </div>
     </div>
-    <!-- Editar Tarefa -->
     <div
       class="modal fade"
       id="modalEditarTarefa"
@@ -398,17 +396,6 @@
             now.toLocaleDateString('pt-BR')
         }
 
-        function contarTurmasUnicas(tarefas) {
-          const anos = new Set()
-          tarefas.forEach((t) => {
-            t.turmas.forEach((tur) => {
-              const ano = tur.split(' ')[0]
-              if (ano) anos.add(ano)
-            })
-          })
-          return anos.size
-        }
-
         function popularFiltroTurmas() {
           const todasTurmas = new Set()
           tarefas.forEach((t) =>
@@ -494,7 +481,7 @@
 
           totalBadge.textContent = tarefas.length
           statTarefas.textContent = tarefas.length
-          statTurmas.textContent = contarTurmasUnicas(tarefas)
+          statTurmas.textContent = contarTurmasUnicasPorAno(tarefas)
           popularFiltroTurmas()
         }
 
@@ -527,13 +514,12 @@
           document.getElementById('editTarMateria').value = t.materia
           document.getElementById('editTarConteudo').value = t.conteudo
           document.getElementById('editTarDataEntrega').value = t.dataEntrega
-          // Preencher seletor
           if (t.turmas.length > 0) {
+            // Usa splitTurma para suportar "Maternal I A", "Pré II B", etc.
             const primeira = t.turmas[0]
-            const parts = primeira.split(' ')
-            const ano = parts[0]
+            const { ano } = splitTurma(primeira)
             const letras = t.turmas
-              .map((tur) => tur.split(' ')[1])
+              .map((tur) => splitTurma(tur).letra)
               .filter(Boolean)
             const letrasUnicas = [...new Set(letras)]
             gerarSelectorTurmas('editTurmasTarefa', ano, letrasUnicas)
@@ -622,8 +608,13 @@
         filtroTurma.addEventListener('change', render)
 
         window.saeProfessorUI = {
-          setTasks(items) { tarefas = items; render() },
-          refresh() { render() },
+          setTasks(items) {
+            tarefas = items
+            render()
+          },
+          refresh() {
+            render()
+          },
         }
 
         document.addEventListener('DOMContentLoaded', function () {
@@ -636,37 +627,6 @@
             .setAttribute('min', hoje)
 
           /* Dados são carregados da API SAE; não usar exemplos locais. */
-          /* if (tarefas.length === 0) {
-            const materias = [
-              'Matemática',
-              'Português',
-              'Ciências',
-              'História',
-              'Geografia',
-            ]
-            const turmasExemplo = [
-              ['6º A', '6º B'],
-              ['7º A'],
-              ['8º A', '8º B'],
-              ['9º A'],
-              ['1º EM A', '1º EM B'],
-              ['2º EM A'],
-              ['3º EM A', '3º EM B'],
-            ]
-            for (let i = 0; i < 8; i++) {
-              const d = new Date()
-              d.setDate(d.getDate() + i + 2)
-              const dataEntrega = d.toISOString().split('T')[0]
-              tarefas.push({
-                id: idCounter++,
-                materia: materias[i % materias.length],
-                turmas: turmasExemplo[i % turmasExemplo.length],
-                conteudo: `Exercícios sobre ${materias[i % materias.length]} - lista ${i + 1}`,
-                dataEntrega: dataEntrega,
-                dataLancamento: hoje,
-              })
-            }
-          } */
 
           initTurmas()
           render()
@@ -682,35 +642,70 @@
         async function loadTasks() {
           try {
             classes = (await saeRequest('/classes')).items || []
-            const groups = await Promise.all(classes.map(async (c) => {
-              const result = await saeRequest(`/tasks?class_id=${c.id}`)
-              return (result.items || []).map((task) => ({
-                id: task.id, materia: task.subject, turmas: [c.name],
-                conteudo: task.description || task.title, dataEntrega: task.due_date,
-                dataLancamento: (task.created_at || '').slice(0, 10), classId: c.id,
-              }))
-            }))
+            const groups = await Promise.all(
+              classes.map(async (c) => {
+                const result = await saeRequest(`/tasks?class_id=${c.id}`)
+                return (result.items || []).map((task) => ({
+                  id: task.id,
+                  materia: task.subject,
+                  turmas: [c.name],
+                  conteudo: task.description || task.title,
+                  dataEntrega: task.due_date,
+                  dataLancamento: (task.created_at || '').slice(0, 10),
+                  classId: c.id,
+                }))
+              }),
+            )
             window.saeProfessorUI.setTasks(groups.flat())
-          } catch (error) { showToast(error.message, 'danger') }
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
         }
 
-        document.getElementById('formTarefa').addEventListener('submit', async (event) => {
-          event.preventDefault(); event.stopImmediatePropagation()
-          const materia = document.getElementById('tarMateria').value.trim()
-          const conteudo = document.getElementById('tarConteudo').value.trim()
-          const data = document.getElementById('tarDataEntrega').value
-          const nomes = getTurmasSelecionadas('turmasTarefa')
-          const selected = classes.filter((item) => nomes.includes(item.name))
-          if (!materia || !conteudo || !data || !selected.length) return showToast('Selecione uma turma cadastrada e preencha os campos.', 'warning')
-          try {
-            await Promise.all(selected.map((item) => saeRequest('/tasks', { method: 'POST', body: JSON.stringify({
-              class_id: item.id, subject: materia, title: conteudo.slice(0, 120), description: conteudo, due_date: data,
-            }) })))
-            event.target.reset(); gerarSelectorTurmas('turmasTarefa'); await loadTasks(); showToast('Tarefa cadastrada no SAE!', 'success')
-          } catch (error) { showToast(error.message, 'danger') }
-        }, true)
+        document.getElementById('formTarefa').addEventListener(
+          'submit',
+          async (event) => {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+            const materia = document.getElementById('tarMateria').value.trim()
+            const conteudo = document.getElementById('tarConteudo').value.trim()
+            const data = document.getElementById('tarDataEntrega').value
+            const nomes = getTurmasSelecionadas('turmasTarefa')
+            const selected = classes.filter((item) => nomes.includes(item.name))
+            if (!materia || !conteudo || !data || !selected.length)
+              return showToast(
+                'Selecione uma turma cadastrada e preencha os campos.',
+                'warning',
+              )
+            try {
+              await Promise.all(
+                selected.map((item) =>
+                  saeRequest('/tasks', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      class_id: item.id,
+                      subject: materia,
+                      title: conteudo.slice(0, 120),
+                      description: conteudo,
+                      due_date: data,
+                    }),
+                  }),
+                ),
+              )
+              event.target.reset()
+              gerarSelectorTurmas('turmasTarefa')
+              await loadTasks()
+              showToast('Tarefa cadastrada no SAE!', 'success')
+            } catch (error) {
+              showToast(error.message, 'danger')
+            }
+          },
+          true,
+        )
 
-        window.addEventListener('load', () => { setTimeout(loadTasks, 0) })
+        window.addEventListener('load', () => {
+          setTimeout(loadTasks, 0)
+        })
       })()
     </script>
   </body>
