@@ -119,9 +119,39 @@ function aplicarMascaraWhats(valor) {
   return resultado
 }
 
-// ─── SELETOR DE TURMA (select + checkboxes A/B) ───
-// Gera o seletor: um <select> com os anos e dois checkboxes para A e B
-// Espera um containerId, e opcionalmente anoSelecionado e letrasSelecionadas (array com 'A', 'B')
+// ─── LISTA DE ANOS/TURMAS ───
+// A ordem aqui é a ordem exibida no <select>.
+const TURMA_ANOS = [
+  'Maternal I',
+  'Maternal II',
+  'Pré I',
+  'Pré II',
+  '1º EF',
+  '2º EF',
+  '3º EF',
+  '4º',
+  '5º',
+  '6º',
+  '7º',
+  '8º',
+  '9º',
+  '1º EM',
+  '2º EM',
+  '3º EM',
+]
+const TURMA_LETRAS = ['A', 'B']
+
+// ─── UTILITÁRIO: separa "Maternal I A" em { ano: "Maternal I", letra: "A" } ───
+// Regra: a letra é sempre o último caractere; o resto é o ano.
+// Isso evita o bug de split(' ')[0] que devolveria "Maternal" em vez de "Maternal I".
+function splitTurma(turma) {
+  if (!turma) return { ano: '', letra: '' }
+  const idx = turma.lastIndexOf(' ')
+  if (idx === -1) return { ano: turma, letra: '' }
+  return { ano: turma.slice(0, idx), letra: turma.slice(idx + 1) }
+}
+
+// ─── SELETOR DE TURMA (select de anos + checkboxes A/B) ───
 function gerarSelectorTurmas(
   containerId,
   anoSelecionado = '',
@@ -129,21 +159,19 @@ function gerarSelectorTurmas(
 ) {
   const container = document.getElementById(containerId)
   if (!container) return
-  const anos = ['6º', '7º', '8º', '9º', '1º EM', '2º EM', '3º EM']
-  const letras = ['A', 'B']
 
   let html = `<div class="turma-selector">
     <div class="form-group">
-      <label for="anoSelect_${containerId}">Ano:</label>
+      <label for="anoSelect_${containerId}">Ano/Turma:</label>
       <select class="form-select" id="anoSelect_${containerId}">
         <option value="">Selecione</option>`
-  anos.forEach((ano) => {
+  TURMA_ANOS.forEach((ano) => {
     const selected = ano === anoSelecionado ? 'selected' : ''
     html += `<option value="${ano}" ${selected}>${ano}</option>`
   })
   html += `</select></div><div class="form-group">
       <label>Letra(s):</label>`
-  letras.forEach((letra) => {
+  TURMA_LETRAS.forEach((letra) => {
     const checked = letrasSelecionadas.includes(letra) ? 'checked' : ''
     html += `<div class="form-check form-check-inline">
       <input class="form-check-input" type="checkbox" id="letra_${containerId}_${letra}" value="${letra}" ${checked}>
@@ -172,22 +200,26 @@ function getTurmasSelecionadas(containerId) {
 // Formata a exibição das turmas (ex: ["9º A", "9º B"] -> "9º A e B")
 function formatarTurmas(turmasArray) {
   if (!turmasArray || turmasArray.length === 0) return ''
-  // Agrupar por ano
   const grupos = {}
   turmasArray.forEach((t) => {
-    const parts = t.split(' ')
-    if (parts.length === 2) {
-      const ano = parts[0]
-      const letra = parts[1]
-      if (!grupos[ano]) grupos[ano] = []
-      grupos[ano].push(letra)
-    } else {
-      // fallback
-      grupos[t] = []
-    }
+    const { ano, letra } = splitTurma(t)
+    if (!grupos[ano]) grupos[ano] = []
+    if (letra) grupos[ano].push(letra)
   })
+
+  // Ordena pelos anos na ordem canônica; anos desconhecidos vão pro fim
+  const anosOrdenados = Object.keys(grupos).sort((a, b) => {
+    const ia = TURMA_ANOS.indexOf(a)
+    const ib = TURMA_ANOS.indexOf(b)
+    if (ia === -1 && ib === -1) return a.localeCompare(b)
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
+
   const resultado = []
-  for (const [ano, letras] of Object.entries(grupos)) {
+  for (const ano of anosOrdenados) {
+    const letras = [...new Set(grupos[ano])].sort()
     if (letras.length === 0) {
       resultado.push(ano)
     } else if (
@@ -203,7 +235,19 @@ function formatarTurmas(turmasArray) {
   return resultado.join(', ')
 }
 
-// ─── FUNÇÃO PARA INICIALIZAR O SELETOR (chamar no DOMContentLoaded) ───
+// Conta turmas únicas por ANO (9º A e 9º B contam como uma só)
+function contarTurmasUnicasPorAno(lista) {
+  const anos = new Set()
+  ;(lista || []).forEach((item) => {
+    ;(item.turmas || []).forEach((t) => {
+      const { ano } = splitTurma(t)
+      if (ano) anos.add(ano)
+    })
+  })
+  return anos.size
+}
+
+// ─── INICIALIZAÇÃO ───
 function initTurmaSelector(containerId, ano = '', letras = []) {
   gerarSelectorTurmas(containerId, ano, letras)
 }
