@@ -470,17 +470,6 @@
           })
         }
 
-        function contarTurmasUnicas(comunicados) {
-          const anos = new Set()
-          comunicados.forEach((c) => {
-            c.turmas.forEach((t) => {
-              const ano = t.split(' ')[0]
-              if (ano) anos.add(ano)
-            })
-          })
-          return anos.size
-        }
-
         function render() {
           const filtro = busca.value.toLowerCase().trim()
           const lista = [...comunicados].sort((a, b) =>
@@ -516,7 +505,7 @@
           empty.style.display = filtrados.length ? 'none' : 'block'
           totalBadge.textContent = comunicados.length
           statCom.textContent = comunicados.length
-          statTurmas.textContent = contarTurmasUnicas(comunicados)
+          statTurmas.textContent = contarTurmasUnicasPorAno(comunicados)
           atualizarDashboard()
         }
 
@@ -531,7 +520,6 @@
               sortKey: c.data || '',
             })
           })
-
           ;(window.__professores || []).forEach((p) => {
             const raw = p.created_at || ''
             items.push({
@@ -592,10 +580,12 @@
           document.getElementById('editComMensagem').value = c.mensagem
           document.getElementById('editComData').value = c.data
           if (c.turmas.length > 0) {
+            // Usa splitTurma para suportar "Maternal I A", "Pré II B", etc.
             const primeira = c.turmas[0]
-            const parts = primeira.split(' ')
-            const ano = parts[0]
-            const letras = c.turmas.map((t) => t.split(' ')[1]).filter(Boolean)
+            const { ano } = splitTurma(primeira)
+            const letras = c.turmas
+              .map((t) => splitTurma(t).letra)
+              .filter(Boolean)
             const letrasUnicas = [...new Set(letras)]
             gerarSelectorTurmas('editTurmasComunicado', ano, letrasUnicas)
           } else {
@@ -727,12 +717,8 @@
             event.stopImmediatePropagation()
             const nomes = getTurmasSelecionadas('turmasComunicado')
             const title = document.getElementById('comTitulo').value.trim()
-            const content = document
-              .getElementById('comMensagem')
-              .value.trim()
-            const selected = classes.filter((item) =>
-              nomes.includes(item.name),
-            )
+            const content = document.getElementById('comMensagem').value.trim()
+            const selected = classes.filter((item) => nomes.includes(item.name))
             if (!title || !content || !selected.length)
               return showToast(
                 'Selecione uma turma cadastrada e preencha os campos.',
@@ -797,7 +783,9 @@
 
         // ─── MÁSCARA WHATSAPP: (xx) xxxxx-xxxx ───
         function aplicarMascara(valor) {
-          const digitos = String(valor || '').replace(/\D/g, '').slice(0, 11)
+          const digitos = String(valor || '')
+            .replace(/\D/g, '')
+            .slice(0, 11)
           if (!digitos) return ''
           if (digitos.length <= 2) return `(${digitos}`
           if (digitos.length <= 7)
@@ -806,10 +794,6 @@
         }
 
         if (inputWhats) {
-          // (1) Bloqueia teclas imprimíveis que não sejam dígito.
-          //     IMPORTANTE: só testa teclas de 1 caractere — assim
-          //     "Backspace", "Tab", "Unidentified" (IME móvel), "F5"
-          //     etc. continuam funcionando normalmente.
           inputWhats.addEventListener('keydown', function (e) {
             if (e.ctrlKey || e.metaKey || e.altKey) return
             if (e.key && e.key.length === 1 && !/\d/.test(e.key)) {
@@ -817,17 +801,13 @@
             }
           })
 
-          // (2) Bloqueia inserções de texto não-numérico via beforeinput.
-          //     Cobre IME móvel, autofill, ditado por voz.
-          //     Backspace/Delete têm e.data = null, então passam livres.
           inputWhats.addEventListener('beforeinput', function (e) {
-            if (e.inputType === 'insertFromPaste') return // tratado abaixo
+            if (e.inputType === 'insertFromPaste') return
             if (e.data != null && /\D/.test(e.data)) {
               e.preventDefault()
             }
           })
 
-          // (3) Sanitiza colagem: aceita "(11) 91234-5678" ou "11912345678"
           inputWhats.addEventListener('paste', function (e) {
             e.preventDefault()
             const texto =
@@ -836,8 +816,6 @@
             this.dispatchEvent(new Event('input', { bubbles: true }))
           })
 
-          // (4) Rede de segurança: reaplica a máscara a cada alteração
-          //     (digitação, autofill, correção ortográfica, etc.)
           inputWhats.addEventListener('input', function () {
             this.value = aplicarMascara(this.value)
           })
@@ -846,7 +824,9 @@
         function render() {
           const filtro = busca.value.toLowerCase().trim()
           const lista = [...professores].sort((a, b) =>
-            String(b.created_at || '').localeCompare(String(a.created_at || '')),
+            String(b.created_at || '').localeCompare(
+              String(a.created_at || ''),
+            ),
           )
           const filtrados = lista.filter(
             (p) =>
