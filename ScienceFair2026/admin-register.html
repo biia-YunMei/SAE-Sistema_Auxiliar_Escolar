@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="pt-BR" data-bs-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registrar Administrador - SAE</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+    <style>
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+
+      .register-wrapper {
+        width: 100%;
+        padding: 1.5rem;
+      }
+
+      .register-card {
+        max-width: 500px;
+        margin: 0 auto;
+      }
+
+      .register-icon {
+        font-size: 3rem;
+        color: var(--teal-600);
+        margin-bottom: 1.5rem;
+        text-align: center;
+      }
+
+      [data-bs-theme='dark'] .register-icon {
+        color: var(--teal-400);
+      }
+
+      .register-title {
+        text-align: center;
+        font-weight: 700;
+        font-size: 1.8rem;
+        margin-bottom: 0.5rem;
+        color: var(--bs-body-color);
+      }
+
+      .register-description {
+        text-align: center;
+        color: var(--bs-secondary-color);
+        margin-bottom: 2rem;
+        font-size: 0.95rem;
+      }
+
+      .password-toggle {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: var(--bs-secondary-color);
+        border: none;
+        background: none;
+        padding: 0.25rem 0.5rem;
+        font-size: 1.1rem;
+        z-index: 10;
+      }
+
+      .password-toggle:hover {
+        color: var(--bs-body-color);
+      }
+
+      .password-input-group {
+        position: relative;
+      }
+
+      .password-input-group input {
+        padding-right: 2.5rem;
+      }
+
+      .form-text-error {
+        color: var(--bs-danger);
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+        display: none;
+      }
+
+      .form-text-error.show {
+        display: block;
+      }
+
+      .form-control.is-invalid {
+        border-color: var(--bs-danger);
+      }
+
+      .form-control.is-invalid:focus {
+        border-color: var(--bs-danger);
+        box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+      }
+
+      .btn-register {
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        font-size: 1rem;
+        width: 100%;
+      }
+
+      .link-back {
+        text-align: center;
+        margin-top: 1.5rem;
+        font-size: 0.95rem;
+      }
+
+      .link-back a {
+        color: var(--teal-600);
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .link-back a:hover {
+        color: var(--teal-700);
+        text-decoration: underline;
+      }
+
+      [data-bs-theme='dark'] .link-back a {
+        color: var(--teal-400);
+      }
+
+      [data-bs-theme='dark'] .link-back a:hover {
+        color: var(--teal-300);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="register-wrapper">
+      <div class="card register-card">
+        <div class="card-body p-5">
+          <div class="register-icon"></div>
+          <h1 class="register-title">Criar Administrador</h1>
+          <p class="register-description">
+            Preencha os dados para registrar o primeiro administrador do
+            sistema.
+          </p>
+
+          <form id="formRegistro" autocomplete="off">
+            <!-- Nome Completo -->
+            <div class="mb-3">
+              <label for="adminNome" class="form-label">
+                Nome Completo <span class="text-danger">*</span>
+              </label>
+              <input
+                type="text"
+                class="form-control"
+                id="adminNome"
+                placeholder="Digite seu nome completo aqui"
+                autocomplete="off"
+                required
+              />
+              <div class="form-text-error" id="erroNome"></div>
+            </div>
+
+            <!-- Telefone -->
+            <div class="mb-3">
+              <label for="adminTelefone" class="form-label">
+                Número de Telefone <span class="text-danger">*</span>
+              </label>
+              <input
+                type="tel"
+                class="form-control"
+                id="adminTelefone"
+                placeholder="(11) 91234-5678"
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength="15"
+                required
+              />
+              <div class="form-text-error" id="erroTelefone"></div>
+            </div>
+
+            <!-- Senha -->
+            <div class="mb-3">
+              <label for="adminSenha" class="form-label">
+                Senha <span class="text-danger">*</span>
+              </label>
+              <div class="password-input-group">
+                <input
+                  type="password"
+                  class="form-control"
+                  id="adminSenha"
+                  placeholder="Digite sua senha"
+                  autocomplete="off"
+                  required
+                />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  id="toggleSenha"
+                  title="Mostrar senha"
+                >
+                  <i class="bi bi-eye-fill"></i>
+                </button>
+              </div>
+              <small class="form-text text-muted">
+                Mínimo 8 caracteres, com letras, números e símbolos.
+              </small>
+              <div class="form-text-error" id="erroSenha"></div>
+            </div>
+
+            <!-- Confirmar Senha -->
+            <div class="mb-4">
+              <label for="adminConfirmSenha" class="form-label">
+                Confirmar Senha <span class="text-danger">*</span>
+              </label>
+              <div class="password-input-group">
+                <input
+                  type="password"
+                  class="form-control"
+                  id="adminConfirmSenha"
+                  placeholder="Confirme sua senha"
+                  autocomplete="off"
+                  required
+                />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  id="toggleConfirmSenha"
+                  title="Mostrar senha"
+                >
+                  <i class="bi bi-eye-fill"></i>
+                </button>
+              </div>
+              <div class="form-text-error" id="erroConfirmSenha"></div>
+            </div>
+
+            <button type="submit" class="btn btn-teal btn-register">
+              <i class="bi bi-check-circle"></i> Criar Administrador
+            </button>
+          </form>
+
+          <div class="link-back">
+            <a href="setup.html" id="linkVoltar">
+              <i class="bi bi-arrow-left"></i> Voltar ao setup
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/script.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+      ;(function () {
+        'use strict'
+
+        const form = document.getElementById('formRegistro')
+        const inputNome = document.getElementById('adminNome')
+        const inputTelefone = document.getElementById('adminTelefone')
+        const inputSenha = document.getElementById('adminSenha')
+        const inputConfirmSenha = document.getElementById('adminConfirmSenha')
+
+        const toggleSenha = document.getElementById('toggleSenha')
+        const toggleConfirmSenha = document.getElementById('toggleConfirmSenha')
+
+        const erroNome = document.getElementById('erroNome')
+        const erroTelefone = document.getElementById('erroTelefone')
+        const erroSenha = document.getElementById('erroSenha')
+        const erroConfirmSenha = document.getElementById('erroConfirmSenha')
+
+        // ─── MÁSCARAS E VALIDAÇÕES ───
+
+        // Máscara de Telefone: (xx) xxxxx-xxxx
+        function aplicarMascaraTelefone(valor) {
+          const digitos = String(valor || '')
+            .replace(/\D/g, '')
+            .slice(0, 11)
+          if (!digitos) return ''
+          if (digitos.length <= 2) return `(${digitos}`
+          if (digitos.length <= 7)
+            return `(${digitos.slice(0, 2)}) ${digitos.slice(2)}`
+          return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`
+        }
+
+        if (inputTelefone) {
+          inputTelefone.addEventListener('keydown', function (e) {
+            if (e.ctrlKey || e.metaKey || e.altKey) return
+            if (e.key && e.key.length === 1 && !/\d/.test(e.key)) {
+              e.preventDefault()
+            }
+          })
+
+          inputTelefone.addEventListener('beforeinput', function (e) {
+            if (e.inputType === 'insertFromPaste') return
+            if (e.data != null && /\D/.test(e.data)) {
+              e.preventDefault()
+            }
+          })
+
+          inputTelefone.addEventListener('paste', function (e) {
+            e.preventDefault()
+            const texto =
+              (e.clipboardData || window.clipboardData).getData('text') || ''
+            this.value = aplicarMascaraTelefone(texto)
+            this.dispatchEvent(new Event('input', { bubbles: true }))
+          })
+
+          inputTelefone.addEventListener('input', function () {
+            this.value = aplicarMascaraTelefone(this.value)
+          })
+        }
+
+        // ─── TOGGLE DE VISIBILIDADE DE SENHA ───
+
+        function togglePasswordVisibility(inputId, toggleId) {
+          const input = document.getElementById(inputId)
+          const toggle = document.getElementById(toggleId)
+
+          if (!input || !toggle) return
+
+          toggle.addEventListener('click', function (e) {
+            e.preventDefault()
+            const isPassword = input.type === 'password'
+            input.type = isPassword ? 'text' : 'password'
+            toggle.innerHTML = isPassword
+              ? '<i class="bi bi-eye-slash-fill"></i>'
+              : '<i class="bi bi-eye-fill"></i>'
+            toggle.title = isPassword ? 'Ocultar senha' : 'Mostrar senha'
+          })
+        }
+
+        togglePasswordVisibility('adminSenha', 'toggleSenha')
+        togglePasswordVisibility('adminConfirmSenha', 'toggleConfirmSenha')
+
+        // ─── VALIDAÇÕES ───
+
+        function validarNome(nome) {
+          const trimmed = nome.trim()
+          if (!trimmed) return 'Nome é obrigatório.'
+          if (trimmed.length < 3) return 'Nome deve ter no mínimo 3 caracteres.'
+          if (trimmed.length > 100)
+            return 'Nome não pode exceder 100 caracteres.'
+          return null
+        }
+
+        function validarTelefone(telefone) {
+          const digitos = telefone.replace(/\D/g, '')
+          if (!digitos) return 'Telefone é obrigatório.'
+          if (digitos.length < 10) return 'Telefone inválido. Use DDD + número.'
+          if (digitos.length > 11)
+            return 'Telefone inválido. Máximo 11 dígitos.'
+          return null
+        }
+
+        function validarSenha(senha) {
+          if (!senha) return 'Senha é obrigatória.'
+          if (senha.length < 8) return 'Senha deve ter no mínimo 8 caracteres.'
+          if (!/[a-z]/.test(senha))
+            return 'Senha deve conter letras minúsculas.'
+          if (!/[A-Z]/.test(senha))
+            return 'Senha deve conter letras maiúsculas.'
+          if (!/\d/.test(senha)) return 'Senha deve conter números.'
+          if (!/[!@#$%^&*(),.?":{}|<>]/.test(senha))
+            return 'Senha deve conter símbolos (!@#$%^&*).'
+          return null
+        }
+
+        function validarConfirmSenha(senha, confirmSenha) {
+          if (!confirmSenha) return 'Confirmação de senha é obrigatória.'
+          if (senha !== confirmSenha) return 'As senhas não coincidem.'
+          return null
+        }
+
+        function mostrarErro(inputElement, errorElement, mensagem) {
+          if (mensagem) {
+            inputElement.classList.add('is-invalid')
+            errorElement.textContent = mensagem
+            errorElement.classList.add('show')
+          } else {
+            inputElement.classList.remove('is-invalid')
+            errorElement.textContent = ''
+            errorElement.classList.remove('show')
+          }
+        }
+
+        // Validação em tempo real
+        inputNome.addEventListener('blur', function () {
+          const erro = validarNome(this.value)
+          mostrarErro(this, erroNome, erro)
+        })
+
+        inputTelefone.addEventListener('blur', function () {
+          const erro = validarTelefone(this.value)
+          mostrarErro(this, erroTelefone, erro)
+        })
+
+        inputSenha.addEventListener('blur', function () {
+          const erro = validarSenha(this.value)
+          mostrarErro(this, erroSenha, erro)
+          // Validar confirmação novamente
+          if (inputConfirmSenha.value) {
+            const erroConfirm = validarConfirmSenha(
+              this.value,
+              inputConfirmSenha.value,
+            )
+            mostrarErro(inputConfirmSenha, erroConfirmSenha, erroConfirm)
+          }
+        })
+
+        inputConfirmSenha.addEventListener('blur', function () {
+          const erroConfirm = validarConfirmSenha(inputSenha.value, this.value)
+          mostrarErro(this, erroConfirmSenha, erroConfirm)
+        })
+
+        // ─── SUBMIT DO FORMULÁRIO ───
+
+        form.addEventListener('submit', async function (e) {
+          e.preventDefault()
+
+          const nome = inputNome.value
+          const telefone = inputTelefone.value
+          const senha = inputSenha.value
+          const confirmSenha = inputConfirmSenha.value
+
+          // Validar tudo
+          const erroN = validarNome(nome)
+          const erroT = validarTelefone(telefone)
+          const erroS = validarSenha(senha)
+          const erroC = validarConfirmSenha(senha, confirmSenha)
+
+          mostrarErro(inputNome, erroNome, erroN)
+          mostrarErro(inputTelefone, erroTelefone, erroT)
+          mostrarErro(inputSenha, erroSenha, erroS)
+          mostrarErro(inputConfirmSenha, erroConfirmSenha, erroC)
+
+          if (erroN || erroT || erroS || erroC) {
+            return
+          }
+
+          // ─── ENVIAR PARA API ───
+
+          try {
+            // const response = await saeRequest('/admin/setup', {
+            //   method: 'POST',
+            //   body: JSON.stringify({
+            //     name: nome,
+            //     phone: telefone.replace(/\D/g, ''),
+            //     password: senha,
+            //   }),
+            // })
+
+            // Simulando sucesso para testes
+            showToast('Administrador criado com sucesso!', 'success')
+
+            // Redirecionar para login após 2 segundos
+            setTimeout(() => {
+              window.location.href = 'login.html'
+            }, 2000)
+          } catch (error) {
+            showToast(error.message || 'Erro ao criar administrador.', 'danger')
+          }
+        })
+      })()
+    </script>
+  </body>
+</html>
