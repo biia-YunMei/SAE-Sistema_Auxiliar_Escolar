@@ -75,6 +75,18 @@
             Professores
           </button>
         </li>
+        <li class="nav-item">
+          <button class="nav-link" id="tab-historico" data-bs-toggle="tab"
+            data-bs-target="#page-historico" type="button" role="tab">
+            Histórico de tarefas
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="tab-alunos" data-bs-toggle="tab"
+            data-bs-target="#page-alunos" type="button" role="tab">
+            Alunos
+          </button>
+        </li>
       </ul>
 
       <div class="tab-content espacamento-cards" id="mainTabsContent">
@@ -329,6 +341,67 @@
             </div>
           </div>
         </div>
+        <div class="tab-pane fade" id="page-historico" role="tabpanel">
+          <div class="card">
+            <div class="card-header">Tarefas cadastradas</div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead><tr><th>Professor</th><th>Turma</th><th>Matéria</th><th>Conteúdo</th><th>Entrega</th><th>Lançamento</th></tr></thead>
+                  <tbody id="historicoTarefas"></tbody>
+                </table>
+              </div>
+              <p id="emptyHistorico" class="text-muted text-center mb-0">Nenhuma tarefa cadastrada.</p>
+            </div>
+          </div>
+        </div>
+        <div class="tab-pane fade" id="page-alunos" role="tabpanel">
+          <div class="row g-4">
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header">Cadastrar aluno</div>
+                <div class="card-body">
+                  <form id="formAluno" autocomplete="off">
+                    <div class="mb-3">
+                      <label class="form-label" for="alunoNome">Nome <span class="text-danger">*</span></label>
+                      <input id="alunoNome" class="form-control" maxlength="120" required />
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label" for="alunoTelefone">Telefone <span class="text-danger">*</span></label>
+                      <input id="alunoTelefone" type="tel" class="form-control" placeholder="(11) 91234-5678" inputmode="numeric" maxlength="15" required />
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label" for="alunoTurma">Série e turma <span class="text-danger">*</span></label>
+                      <select id="alunoTurma" class="form-select" required>
+                        <option value="">Selecione uma turma...</option>
+                      </select>
+                    </div>
+                    <button class="btn btn-teal w-100" type="submit">Cadastrar aluno</button>
+                  </form>
+                  <p class="form-text mb-0 mt-2">O aluno não precisa de login ou senha.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-7">
+              <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  <span>Alunos cadastrados</span>
+                  <span class="badge badge-teal" id="totalAlunosBadge">0</span>
+                </div>
+                <div class="card-body">
+                  <input id="buscaAlunos" class="form-control mb-3" placeholder="Buscar por nome, telefone ou série..." />
+                  <div class="table-scroll">
+                    <table class="table table-hover">
+                      <thead><tr><th>#</th><th>Nome</th><th>Telefone</th><th>Série</th><th>Turma</th></tr></thead>
+                      <tbody id="tabelaAlunos"></tbody>
+                    </table>
+                  </div>
+                  <div id="emptyAlunos" class="text-muted text-center py-4">Nenhum aluno cadastrado.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -552,11 +625,16 @@
             .join('')
         }
 
-        window.excluirComunicado = function (id) {
+        window.excluirComunicado = async function (id) {
           if (!confirm('Deseja excluir este comunicado?')) return
-          comunicados = comunicados.filter((c) => c.id !== id)
-          render()
-          showToast('Comunicado excluído!', 'danger')
+          try {
+            await saeRequest(`/notices/${id}`, { method: 'DELETE' })
+            comunicados = comunicados.filter((c) => c.id !== id)
+            render()
+            showToast('Comunicado excluído!', 'danger')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
         }
 
         window.verMensagem = function (id) {
@@ -596,7 +674,7 @@
 
         document
           .getElementById('formEditarComunicado')
-          .addEventListener('submit', function (e) {
+          .addEventListener('submit', async function (e) {
             e.preventDefault()
             const id = parseInt(document.getElementById('editComId').value)
             const turmas = getTurmasSelecionadas('editTurmasComunicado')
@@ -617,16 +695,34 @@
               showToast('Data não pode ser anterior a hoje.', 'warning')
               return
             }
-            const idx = comunicados.findIndex((c) => c.id === id)
-            if (idx !== -1) {
-              comunicados[idx].turmas = turmas
-              comunicados[idx].titulo = titulo
-              comunicados[idx].mensagem = mensagem
-              comunicados[idx].data = data
+            try {
+              const classes = (await saeRequest('/classes')).items || []
+              const selected = turmas.map((name) => classes.find((item) => item.name === name)).filter(Boolean)
+              if (!selected.length) return showToast('Selecione uma turma cadastrada.', 'warning')
+              const ids = window.__saeNoticeIds?.get(id) || [id]
+              await saeRequest(`/notices/${ids[0]}`, {
+                method: 'PUT',
+                body: JSON.stringify({ class_id: selected[0].id, title: titulo, content: mensagem }),
+              })
+              await Promise.all(ids.slice(1).map((noticeId) => saeRequest(`/notices/${noticeId}`, { method: 'DELETE' })))
+              const created = await Promise.all(selected.slice(1).map((item) => saeRequest('/notices', {
+                method: 'POST',
+                body: JSON.stringify({ class_id: item.id, title: titulo, content: mensagem }),
+              })))
+              const idx = comunicados.findIndex((c) => c.id === id)
+              if (idx !== -1) {
+                comunicados[idx].turmas = turmas
+                comunicados[idx].titulo = titulo
+                comunicados[idx].mensagem = mensagem
+                comunicados[idx].data = data
+              }
+              window.__saeNoticeIds?.set(id, [ids[0], ...created.map((item) => item.id)])
+              modalEditar.hide()
+              render()
+              showToast('Comunicado atualizado!', 'success')
+            } catch (error) {
+              showToast(error.message, 'danger')
             }
-            modalEditar.hide()
-            render()
-            showToast('Comunicado atualizado!', 'success')
           })
 
         form.addEventListener('submit', function (e) {
@@ -685,6 +781,36 @@
     </script>
     <script>
       ;(function () {
+        if (!saeRequireLogin()) return
+        const escapeCell = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[char])
+        async function loadTaskHistory() {
+          const tbody = document.getElementById('historicoTarefas')
+          const empty = document.getElementById('emptyHistorico')
+          try {
+            const [tasks, classes, teachers] = await Promise.all([
+              saeRequest('/tasks?all=1'), saeRequest('/classes'), saeRequest('/teachers'),
+            ])
+            const byId = new Map((classes.items || []).map((item) => [item.id, item.name]))
+            const teachersById = new Map((teachers.items || []).map((item) => [item.teacher_id, item.name]))
+            const items = tasks.items || []
+            tbody.innerHTML = items.map((task) => `<tr>
+              <td>${escapeCell(teachersById.get(task.teacher_id) || `ID ${task.teacher_id}`)}</td><td>${escapeCell(byId.get(task.class_id) || '—')}</td>
+              <td>${escapeCell(task.subject)}</td><td>${escapeCell(task.description || task.title)}</td>
+              <td>${formatDate(task.due_date)}</td><td>${formatDate((task.created_at || '').slice(0, 10))}</td>
+            </tr>`).join('')
+            empty.style.display = items.length ? 'none' : 'block'
+          } catch (error) {
+            empty.textContent = error.message
+            showToast(error.message, 'danger')
+          }
+        }
+        document.getElementById('tab-historico').addEventListener('shown.bs.tab', loadTaskHistory)
+      })()
+    </script>
+    <script>
+      ;(function () {
         'use strict'
         if (!saeRequireLogin()) return
         let classes = []
@@ -697,15 +823,19 @@
               const key = `${notice.title}|${notice.content}|${notice.created_at}`
               const item = grouped.get(key) || {
                 id: notice.id,
+                ids: [],
                 turmas: [],
                 titulo: notice.title,
                 mensagem: notice.content,
                 data: notice.created_at.slice(0, 10),
               }
+              item.ids.push(notice.id)
               item.turmas.push(notice.class_name || 'Todas')
               grouped.set(key, item)
             })
-            window.saeCoordenacaoUI.setNotices([...grouped.values()])
+            const notices = [...grouped.values()]
+            window.__saeNoticeIds = new Map(notices.map((item) => [item.id, item.ids]))
+            window.saeCoordenacaoUI.setNotices(notices)
           } catch (error) {
             showToast(error.message, 'danger')
           }
@@ -926,6 +1056,110 @@
         busca.addEventListener('input', render)
 
         window.addEventListener('load', () => setTimeout(loadProfessores, 0))
+      })()
+    </script>
+    <script>
+      ;(function () {
+        'use strict'
+        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
+
+        const form = document.getElementById('formAluno')
+        const nameInput = document.getElementById('alunoNome')
+        const phoneInput = document.getElementById('alunoTelefone')
+        const classInput = document.getElementById('alunoTurma')
+        const searchInput = document.getElementById('buscaAlunos')
+        const table = document.getElementById('tabelaAlunos')
+        const empty = document.getElementById('emptyAlunos')
+        const total = document.getElementById('totalAlunosBadge')
+        let students = []
+        let classes = []
+
+        function escapeHtml(value) {
+          return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+          })[char])
+        }
+
+        function formatPhone(value) {
+          const digits = String(value || '').replace(/\D/g, '').slice(-11)
+          if (digits.length <= 2) return digits ? `(${digits}` : ''
+          if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+          return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+        }
+
+        phoneInput.addEventListener('input', () => {
+          phoneInput.value = formatPhone(phoneInput.value)
+        })
+
+        function render() {
+          const term = searchInput.value.trim().toLowerCase()
+          const filtered = students.filter((student) =>
+            `${student.name} ${student.phone} ${student.grade} ${student.class_name}`.toLowerCase().includes(term),
+          )
+          table.innerHTML = filtered.map((student, index) => `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${escapeHtml(student.name)}</td>
+              <td>${escapeHtml(formatPhone(student.phone))}</td>
+              <td>${escapeHtml(student.grade)}</td>
+              <td>${escapeHtml(student.class_name || '—')}</td>
+            </tr>
+          `).join('')
+          empty.style.display = filtered.length ? 'none' : 'block'
+          total.textContent = students.length
+        }
+
+        async function loadStudents() {
+          try {
+            const data = await saeRequest('/students')
+            students = data.items || []
+            render()
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        }
+
+        async function loadClasses() {
+          try {
+            const data = await saeRequest('/classes')
+            classes = (data.items || []).filter((classroom) => classroom.status === 'ACTIVE')
+            classInput.innerHTML = '<option value="">Selecione uma turma...</option>' +
+              classes.map((classroom) => `<option value="${Number(classroom.id)}">${escapeHtml(classroom.name)} — ${escapeHtml(classroom.grade)}</option>`).join('')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        }
+
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault()
+          const name = nameInput.value.trim()
+          const phone = phoneInput.value.trim()
+          const classId = Number(classInput.value)
+          if (!name || !phone || !classId) {
+            showToast('Preencha nome, telefone e selecione a turma do aluno.', 'warning')
+            return
+          }
+          if (phone.replace(/\D/g, '').length < 10) {
+            showToast('Telefone inválido. Informe DDD e número.', 'warning')
+            return
+          }
+          try {
+            await saeRequest('/students', {
+              method: 'POST', body: JSON.stringify({ name, phone, class_id: classId }),
+            })
+            form.reset()
+            await loadStudents()
+            showToast('Aluno cadastrado!', 'success')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        })
+
+        searchInput.addEventListener('input', render)
+        window.addEventListener('load', () => setTimeout(() => {
+          loadClasses()
+          loadStudents()
+        }, 0))
       })()
     </script>
   </body>

@@ -642,21 +642,16 @@
         async function loadTasks() {
           try {
             classes = (await saeRequest('/classes')).items || []
-            const groups = await Promise.all(
-              classes.map(async (c) => {
-                const result = await saeRequest(`/tasks?class_id=${c.id}`)
-                return (result.items || []).map((task) => ({
-                  id: task.id,
-                  materia: task.subject,
-                  turmas: [c.name],
-                  conteudo: task.description || task.title,
-                  dataEntrega: task.due_date,
-                  dataLancamento: (task.created_at || '').slice(0, 10),
-                  classId: c.id,
-                }))
-              }),
-            )
-            window.saeProfessorUI.setTasks(groups.flat())
+            const result = await saeRequest('/tasks?mine=1')
+            window.saeProfessorUI.setTasks((result.items || []).map((task) => ({
+              id: task.id,
+              materia: task.subject,
+              turmas: [classes.find((item) => item.id === task.class_id)?.name || `Turma ${task.class_id}`],
+              conteudo: task.description || task.title,
+              dataEntrega: task.due_date,
+              dataLancamento: (task.created_at || '').slice(0, 10),
+              classId: task.class_id,
+            })))
           } catch (error) {
             showToast(error.message, 'danger')
           }
@@ -671,19 +666,21 @@
             const conteudo = document.getElementById('tarConteudo').value.trim()
             const data = document.getElementById('tarDataEntrega').value
             const nomes = getTurmasSelecionadas('turmasTarefa')
-            const selected = classes.filter((item) => nomes.includes(item.name))
+            const selected = nomes.map((name) => classes.find((item) => item.name === name) || { name })
             if (!materia || !conteudo || !data || !selected.length)
               return showToast(
-                'Selecione uma turma cadastrada e preencha os campos.',
+                'Selecione ao menos uma turma e preencha os campos.',
                 'warning',
               )
+            const resumo = `Matéria: ${materia}\nTurmas: ${selected.map((item) => item.name).join(', ')}\nConteúdo: ${conteudo}\nEntrega: ${formatDate(data)}`
+            if (!window.confirm(`Confirme os dados da tarefa antes de publicar:\n\n${resumo}`)) return
             try {
               await Promise.all(
                 selected.map((item) =>
                   saeRequest('/tasks', {
                     method: 'POST',
                     body: JSON.stringify({
-                      class_id: item.id,
+                      ...(item.id ? { class_id: item.id } : { class_name: item.name }),
                       subject: materia,
                       title: conteudo.slice(0, 120),
                       description: conteudo,

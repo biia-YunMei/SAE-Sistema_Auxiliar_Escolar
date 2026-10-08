@@ -448,24 +448,27 @@
           // ─── ENVIAR PARA API ───
 
           try {
-            // const response = await saeRequest('/admin/setup', {
-            //   method: 'POST',
-            //   body: JSON.stringify({
-            //     name: nome,
-            //     phone: telefone.replace(/\D/g, ''),
-            //     password: senha,
-            //   }),
-            // })
+            const digitos = telefone.replace(/\D/g, '')
+            const telefoneApi = digitos.length === 10 || digitos.length === 11
+              ? `+55${digitos}`
+              : `+${digitos}`
+            const botao = form.querySelector('[type="submit"]')
+            botao.disabled = true
+            await saeRequest('/bootstrap', {
+              method: 'POST',
+              body: JSON.stringify({ name: nome.trim(), phone: telefoneApi, password: senha }),
+            })
 
-            // Simulando sucesso para testes
             showToast('Administrador criado com sucesso!', 'success')
 
-            // Redirecionar para login após 2 segundos
             setTimeout(() => {
-              window.location.href = 'login.html'
+              window.location.href = 'index.html'
             }, 2000)
           } catch (error) {
             showToast(error.message || 'Erro ao criar administrador.', 'danger')
+          } finally {
+            const botao = form.querySelector('[type="submit"]')
+            if (botao) botao.disabled = false
           }
         })
       })()

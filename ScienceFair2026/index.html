@@ -10,22 +10,30 @@
   <main class="container" style="max-width:460px">
     <section class="card shadow-sm"><div class="card-body p-4">
       <h1 class="h3 mb-2">SAE</h1><p class="text-secondary">Sistema Auxiliar Escolar</p>
-      <form id="loginForm"><div class="mb-3"><label class="form-label">Telefone</label><input id="phone" class="form-control" placeholder="+5566999999999" required></div>
-      <div class="mb-3"><label class="form-label">Senha</label><input id="password" type="password" class="form-control" required></div>
+      <form id="loginForm"><div class="mb-3"><label class="form-label">WhatsApp</label><input id="phone" class="form-control" placeholder="(11) 91234-5678 ou +5566999999999" required></div>
+      <div class="mb-3"><label class="form-label">Senha <span class="text-secondary">(somente coordenação)</span></label><input id="password" type="password" class="form-control" autocomplete="current-password"></div>
       <button class="btn btn-teal w-100">Entrar</button></form>
       <p id="loginError" class="text-danger small mt-3 mb-0"></p>
     </div></section>
   </main>
   <script src="js/api.js"></script>
   <script>
-    document.getElementById('loginForm').addEventListener('submit', async (event) => {
-      event.preventDefault(); const error = document.getElementById('loginError'); error.textContent = ''
+    const loginForm = document.getElementById('loginForm')
+    const phoneInput = document.getElementById('phone')
+    const passwordInput = document.getElementById('password')
+    const loginError = document.getElementById('loginError')
+    const loginButton = loginForm.querySelector('button[type="submit"], button:not([type])')
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      loginError.textContent = ''
+      loginButton.disabled = true
       try {
-        const user = await saeLogin(phone.value.trim(), password.value)
+        const user = await saeLogin(phoneInput.value.trim(), passwordInput.value)
         const page = user.type === 'PROF' ? 'professores.html' : 'coordenacao.html'
         window.location.href = `${page}?sae_token=${encodeURIComponent(user.token)}`
       }
-      catch (e) { error.textContent = e.message }
+      catch (e) { loginError.textContent = e.message }
+      finally { loginButton.disabled = false }
     })
   </script>
 </body></html>
