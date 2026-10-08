@@ -8,8 +8,64 @@
 #include "http_server.h"
 #include "auth.h"
 #include "logger.h"
+#include "config.h"
 
+#include <stdio.h>
 #include <string.h>
+
+typedef struct {
+    const char *url;
+    const char *file;
+    const char *content_type;
+} StaticAsset;
+
+/* Somente esses arquivos públicos são servidos; o restante do filesystem
+ * nunca pode ser solicitado pela URL. */
+static const StaticAsset static_assets[] = {
+    { "/", "index.html", "text/html; charset=utf-8" },
+    { "/index.html", "index.html", "text/html; charset=utf-8" },
+    { "/setup.html", "setup.html", "text/html; charset=utf-8" },
+    { "/admin-register.html", "admin-register.html", "text/html; charset=utf-8" },
+    { "/professores.html", "professores.html", "text/html; charset=utf-8" },
+    { "/coordenacao.html", "coordenacao.html", "text/html; charset=utf-8" },
+    { "/css/style.css", "css/style.css", "text/css; charset=utf-8" },
+    { "/js/api.js", "js/api.js", "text/javascript; charset=utf-8" },
+    { "/js/script.js", "js/script.js", "text/javascript; charset=utf-8" }
+};
+
+static int serve_static_asset(const HttpRequest *req, HttpResponse *res)
+{
+    if (strcmp(req->method, "GET") != 0 || strncmp(req->path, "/api/", 5) == 0)
+        return 0;
+    const StaticAsset *asset = NULL;
+    for (size_t i = 0; i < sizeof static_assets / sizeof static_assets[0]; ++i) {
+        if (strcmp(req->path, static_assets[i].url) == 0) {
+            asset = &static_assets[i];
+            break;
+        }
+    }
+    if (!asset) return 0;
+
+    const AppConfig *cfg = config_current();
+    char path[768];
+    int n = cfg ? snprintf(path, sizeof path, "%s/%s", cfg->web_root, asset->file) : -1;
+    if (n < 0 || (size_t)n >= sizeof path)
+        return http_respond_error(res, 500, "web root configuration invalid") == SUCCESS;
+    FILE *file = fopen(path, "rb");
+    if (!file)
+        return http_respond_error(res, 404, "frontend asset not found") == SUCCESS;
+    size_t length = fread(res->body_storage, 1, sizeof res->body_storage, file);
+    int too_large = !feof(file);
+    int read_error = ferror(file);
+    fclose(file);
+    if (too_large || read_error)
+        return http_respond_error(res, 500, "frontend asset could not be read") == SUCCESS;
+    res->status = 200;
+    res->content_type = asset->content_type;
+    res->body = res->body_storage;
+    res->body_len = length;
+    return 1;
+}
 
 static int match_path(const char *pattern, const char *path,
                       char *id_out, size_t cap)
@@ -51,6 +107,7 @@ int router_dispatch(const Route *routes, size_t n,
                     const HttpRequest *req, HttpResponse *res,
                     char *id_out, size_t cap)
 {
+    if (serve_static_asset(req, res)) return SUCCESS;
     for (size_t i = 0; i < n; i++) {
         if (strcmp(routes[i].method, req->method) != 0) continue;
         if (match_path(routes[i].pattern, req->path, id_out, cap)) {

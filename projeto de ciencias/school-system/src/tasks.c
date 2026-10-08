@@ -74,6 +74,10 @@ int tasks_create(int64_t teacher_id, int64_t class_id,
 {
     int rc = validate_fields(subject, title, due_date);
     if (rc != SUCCESS) return rc;
+    Class classroom;
+    if (classes_find_by_id(class_id, &classroom) != SUCCESS ||
+        strcmp(classroom.status, "ACTIVE") != 0)
+        return ERROR_NOT_FOUND;
     if (!classes_teacher_has_access(teacher_id, class_id))
         return ERROR_FORBIDDEN;
 
@@ -228,4 +232,11 @@ int tasks_list_by_teacher(int64_t teacher_id, bool include_archived,
     return list_by("SELECT id,teacher_id,class_id,subject,title,description,due_date,"
                    "status,created_at,updated_at FROM tasks WHERE teacher_id=?",
                    teacher_id, include_archived, out, count);
+}
+
+int tasks_list_all(bool include_archived, Task **out, size_t *count)
+{
+    return list_by("SELECT id,teacher_id,class_id,subject,title,description,due_date,"
+                   "status,created_at,updated_at FROM tasks WHERE 1=?",
+                   1, include_archived, out, count);
 }

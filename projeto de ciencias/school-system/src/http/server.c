@@ -56,6 +56,8 @@ static const char *friendly_error_message(const char *message)
         { "could not assign class", "Não foi possível vincular o aluno à turma." },
         { "could not create administrator", "Não foi possível criar o administrador." },
         { "could not create notice", "Não foi possível publicar o aviso." },
+        { "could not create class", "Não foi possível criar ou localizar essa turma." },
+        { "could not link class", "Não foi possível liberar essa turma para o professor." },
         { "could not create session", "Não foi possível iniciar sua sessão. Tente novamente." },
         { "create failed", "Não foi possível concluir o cadastro. Verifique os dados e tente novamente." },
         { "database error", "Não foi possível consultar os dados agora. Tente novamente." },
@@ -69,8 +71,10 @@ static const char *friendly_error_message(const char *message)
         { "invalid credentials", "Telefone ou senha incorretos. Confira os dados e tente novamente." },
         { "invalid due_date", "A data de entrega não é válida. Use o formato AAAA-MM-DD." },
         { "invalid id", "A identificação informada não é válida." },
+        { "invalid email", "Informe um endereço de e-mail válido." },
         { "invalid message", "A mensagem informada não é válida." },
         { "invalid phone", "O número de telefone informado não é válido." },
+        { "invalid student data", "Confira o nome e a série do aluno." },
         { "invalid session", "Sua sessão expirou ou já foi encerrada. Faça login novamente." },
         { "invalid type", "O tipo de usuário informado não é válido." },
         { "invalid verification request", "A verificação recebida não é válida." },
@@ -84,8 +88,10 @@ static const char *friendly_error_message(const char *message)
         { "missing phone", "Informe o número de telefone para entrar." },
         { "missing webhook signature", "Não foi possível confirmar a origem da mensagem." },
         { "name required", "Informe o nome." },
-        { "name and phone are required", "Informe o nome e o telefone." },
+        { "name and phone are required", "Informe o nome e o WhatsApp do professor." },
+        { "name, phone and grade are required", "Informe o nome, telefone e série do aluno." },
         { "name, phone and password are required", "Informe nome, telefone e senha." },
+        { "name, phone and class_id are required", "Informe nome, telefone e turma do aluno." },
         { "not found", "O item solicitado não foi encontrado." },
         { "not linked to class", "O professor não está vinculado a esta turma." },
         { "not owner", "Você não tem permissão para alterar esta tarefa." },
@@ -100,6 +106,7 @@ static const char *friendly_error_message(const char *message)
         { "signature verification failed", "Não foi possível confirmar a origem da mensagem." },
         { "signature verification unavailable", "A confirmação de segurança não está disponível agora." },
         { "student not found", "O aluno informado não foi encontrado." },
+        { "use student registration", "Cadastre alunos pela aba Alunos, informando nome, telefone e série." },
         { "student tasks only", "Você só pode consultar as tarefas da sua própria turma." },
         { "subject required", "Informe a matéria." },
         { "teacher profile not found", "O cadastro de professor não foi encontrado." },
@@ -113,7 +120,8 @@ static const char *friendly_error_message(const char *message)
         { "update failed", "Não foi possível salvar as alterações. Tente novamente." },
         { "user_id and class_id are required", "Informe o aluno e a turma." },
         { "verification failed", "Não foi possível confirmar a verificação." },
-        { "webhook not configured", "A integração de mensagens ainda não está configurada." }
+        { "webhook not configured", "A integração de mensagens ainda não está configurada." },
+        { "webhook signature not configured", "Configure o segredo da aplicação para validar o webhook do WhatsApp." }
     };
     if (!message) return "Ocorreu um erro inesperado. Tente novamente.";
     for (size_t i = 0; i < sizeof messages / sizeof messages[0]; ++i)

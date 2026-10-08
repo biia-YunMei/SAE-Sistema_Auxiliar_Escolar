@@ -25,7 +25,11 @@ as operações exigem uma sessão válida. A sessão local fica em `.sae-session
 |---|---|
 | `COORD` | Todos os comandos. Pode cadastrar, editar e excluir usuários. |
 | `PROF` | Lista usuários; cria e administra somente as próprias turmas e tarefas; vincula alunos às suas turmas; envia mensagens por WhatsApp. |
-| `STUD` | Lista somente tarefas da turma à qual está vinculado. |
+| `STUD` | Não possui login. Os dados de nome, telefone e série são cadastrados pela coordenação; consultas são feitas pelo WhatsApp sem autenticação. |
+
+O cadastro de alunos é feito na aba **Alunos** da área da coordenação e não
+cria senha ou sessão. O cadastro geral de usuários aceita somente coordenadores
+e professores.
 
 Todos os papéis podem usar `sae logout` e `sae --help`.
 
@@ -33,7 +37,7 @@ Todos os papéis podem usar `sae logout` e `sae --help`.
 
 ```bash
 # Usuários (COORD)
-sae usuario criar -n NOME -p TELEFONE -t COORD|PROF|STUD [-s SENHA]
+sae usuario criar -n NOME -p TELEFONE -t COORD|PROF [-s SENHA]
 sae usuario listar
 sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]
 sae usuario excluir -u ID

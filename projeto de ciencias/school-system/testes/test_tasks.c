@@ -102,6 +102,10 @@ int main(void)
     CHECK(n == 2);
     free(list);
 
+    CHECK(tasks_list_all(false, &list, &n) == SUCCESS);
+    CHECK(n >= 1);
+    free(list);
+
     database_shutdown();
     unlink(tmp);
     printf("\nTasks: %d passed, %d failed\n", passed, failed);

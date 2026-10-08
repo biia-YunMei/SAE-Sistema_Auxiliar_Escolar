@@ -18,6 +18,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+
+static void json_escape(const char *value, char *out, size_t cap)
+{
+    size_t used = 0;
+    for (const unsigned char *p = (const unsigned char *)(value ? value : ""); *p && used + 1 < cap; ++p) {
+        if (*p == '"' || *p == '\\') {
+            if (used + 2 >= cap) break;
+            out[used++] = '\\'; out[used++] = (char)*p;
+        } else if (*p >= 0x20) out[used++] = (char)*p;
+    }
+    out[used] = '\0';
+}
 
 /* extrai "key":"value" ou "key":number do body JSON ingênuo */
 static int extract_str(const char *body, const char *key, char *out, size_t cap)
@@ -27,12 +40,21 @@ static int extract_str(const char *body, const char *key, char *out, size_t cap)
     const char *p = strstr(body, needle);
     if (!p) return 0;
     p += n;
-    const char *e = strchr(p, '"');
-    if (!e) return 0;
-    size_t len = (size_t)(e - p);
-    if (len >= cap) len = cap - 1;
-    memcpy(out, p, len);
-    out[len] = '\0';
+    size_t used = 0;
+    while (*p && *p != '"') {
+        char ch = *p++;
+        if (ch == '\\') {
+            if (!*p) return 0;
+            ch = *p++;
+            if (ch == 'n') ch = '\n';
+            else if (ch == 'r') ch = '\r';
+            else if (ch == 't') ch = '\t';
+        }
+        if (used + 1 >= cap) return 0;
+        out[used++] = ch;
+    }
+    if (*p != '"') return 0;
+    out[used] = '\0';
     return 1;
 }
 
@@ -77,12 +99,14 @@ static int get_query_param(const char *query, const char *name,
 /* resolve sessão via Authorization; se falhar, devolve 401. */
 static int require_session(const HttpRequest *req, HttpResponse *res, AuthSession *s)
 {
-    if (!req->auth)
-        return http_respond_error(res, 401, "missing authorization");
+    if (!req->auth) {
+        (void)http_respond_error(res, 401, "missing authorization");
+        return ERROR_UNAUTHORIZED;
+    }
     int rc = auth_session_resolve(req->auth, s);
     if (rc != SUCCESS) {
-        http_respond_error(res, 401, "invalid session");
-        return rc;
+        (void)http_respond_error(res, 401, "invalid session");
+        return ERROR_UNAUTHORIZED;
     }
     return SUCCESS;
 }
@@ -98,6 +122,17 @@ static int teacher_id_for_session(const AuthSession *s, long long *out)
     if (rc == SUCCESS) *out = sqlite3_column_int64(st, 0);
     sqlite3_finalize(st);
     return rc;
+}
+
+static int find_authorized_class(const char *name, long long teacher_id, long long *class_id)
+{
+    Class classroom;
+    if (!name || !validation_length_between(name, 1, 63)) return ERROR_INVALID_INPUT;
+    int rc = classes_find_by_name(name, &classroom);
+    if (rc != SUCCESS || strcmp(classroom.status, "ACTIVE") != 0) return ERROR_NOT_FOUND;
+    *class_id = (long long)classroom.id;
+    if (!classes_teacher_has_access(teacher_id, *class_id)) return ERROR_FORBIDDEN;
+    return SUCCESS;
 }
 
 static int student_class_for_session(const AuthSession *s, long long *out)
@@ -120,17 +155,35 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
     if (rc != SUCCESS) return rc;
 
     char qbuf[256] = {0};
-    if (!get_query_param(req->query, "class_id", qbuf, sizeof qbuf))
-        return http_respond_error(res, 400, "class_id required");
-    long long class_id = strtoll(qbuf, NULL, 10);
-    if (class_id <= 0) return http_respond_error(res, 400, "class_id required");
+    int mine = get_query_param(req->query, "mine", qbuf, sizeof qbuf) && strcmp(qbuf, "1") == 0;
+    int all = get_query_param(req->query, "all", qbuf, sizeof qbuf) && strcmp(qbuf, "1") == 0;
+    char exact_date[16] = {0}, date_from[16] = {0}, date_to[16] = {0};
+    int has_exact = get_query_param(req->query, "due_date", exact_date, sizeof exact_date);
+    int has_from = get_query_param(req->query, "date_from", date_from, sizeof date_from);
+    int has_to = get_query_param(req->query, "date_to", date_to, sizeof date_to);
+    if ((has_exact && !validation_is_valid_date(exact_date)) ||
+        (has_from && !validation_is_valid_date(date_from)) ||
+        (has_to && !validation_is_valid_date(date_to)) ||
+        (has_from && has_to && strcmp(date_from, date_to) > 0))
+        return http_respond_error(res, 400, "invalid date filter");
+    long long class_id = 0;
+    if (all && s.type != USER_TYPE_COORD)
+        return http_respond_error(res, 403, "coordinator only");
+    if (!mine && !all) {
+        if (!get_query_param(req->query, "class_id", qbuf, sizeof qbuf))
+            return http_respond_error(res, 400, "class_id required");
+        class_id = strtoll(qbuf, NULL, 10);
+        if (class_id <= 0) return http_respond_error(res, 400, "class_id required");
+    } else if (s.type != USER_TYPE_PROF) {
+        return http_respond_error(res, 403, "forbidden");
+    }
 
     if (s.type == USER_TYPE_STUD) {
         long long student_class_id = 0;
         if (student_class_for_session(&s, &student_class_id) != SUCCESS ||
             student_class_id != class_id)
             return http_respond_error(res, 403, "student tasks only");
-    } else if (s.type == USER_TYPE_PROF) {
+    } else if (s.type == USER_TYPE_PROF && !mine) {
         long long teacher_id = 0;
         if (teacher_id_for_session(&s, &teacher_id) != SUCCESS ||
             !classes_teacher_has_access(teacher_id, class_id))
@@ -138,25 +191,49 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
     }
 
     Task *list = NULL; size_t n = 0;
-    rc = tasks_list_by_class((int64_t)class_id, false, &list, &n);
+    if (all) rc = tasks_list_all(false, &list, &n);
+    else if (mine) {
+        long long teacher_id = 0;
+        if (teacher_id_for_session(&s, &teacher_id) != SUCCESS)
+            return http_respond_error(res, 403, "teacher profile not found");
+        rc = tasks_list_by_teacher((int64_t)teacher_id, false, &list, &n);
+    } else rc = tasks_list_by_class((int64_t)class_id, false, &list, &n);
     if (rc != SUCCESS) { return http_respond_error(res, 500, "list failed"); }
 
+    if (has_exact || has_from || has_to) {
+        size_t kept = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const char *due = list[i].due_date;
+            if ((has_exact && strcmp(due, exact_date) != 0) ||
+                (has_from && strcmp(due, date_from) < 0) ||
+                (has_to && strcmp(due, date_to) > 0)) continue;
+            if (kept != i) list[kept] = list[i];
+            ++kept;
+        }
+        n = kept;
+    }
+
     /* Renderiza JSON manualmente. */
-    size_t cap = 256 + n * 2048;
+    if (n > (SIZE_MAX - 256) / 8192) { free(list); return http_respond_error(res, 500, "response too large"); }
+    size_t cap = 256 + n * 8192;
     char *out = (char *)malloc(cap);
     if (!out) { free(list); return http_respond_error(res, 500, "oom"); }
     size_t p = 0;
     p += (size_t)snprintf(out + p, cap - p, "{\"count\":%zu,\"items\":[", n);
     for (size_t i = 0; i < n; i++) {
+        char subject[128], title[256], description[2048];
+        json_escape(list[i].subject, subject, sizeof subject);
+        json_escape(list[i].title, title, sizeof title);
+        json_escape(list[i].description, description, sizeof description);
         p += (size_t)snprintf(out + p, cap - p,
             "%s{\"id\":%lld,\"teacher_id\":%lld,\"class_id\":%lld,"
             "\"subject\":\"%s\",\"title\":\"%s\",\"description\":\"%s\","
-            "\"due_date\":\"%s\",\"status\":\"%s\"}",
+            "\"due_date\":\"%s\",\"status\":\"%s\",\"created_at\":\"%s\"}",
             i ? "," : "",
             (long long)list[i].id, (long long)list[i].teacher_id,
             (long long)list[i].class_id,
-            list[i].subject, list[i].title, list[i].description,
-            list[i].due_date, task_status_str(list[i].status));
+            subject, title, description,
+            list[i].due_date, task_status_str(list[i].status), list[i].created_at);
     }
     p += (size_t)snprintf(out + p, cap - p, "]}");
     free(list);
@@ -174,7 +251,9 @@ int ctrl_tasks_create(const HttpRequest *req, HttpResponse *res)
         return http_respond_error(res, 403, "forbidden");
 
     long long class_id = extract_int(req->body, "class_id", -1);
-    if (class_id <= 0) return http_respond_error(res, 400, "class_id required");
+    char class_name[64] = {0};
+    (void)extract_str(req->body, "class_name", class_name, sizeof class_name);
+    if (class_id <= 0 && !class_name[0]) return http_respond_error(res, 400, "class_id required");
 
     char subject[64]={0}, title[121]={0}, desc[1024]={0}, due[16]={0};
     if (!extract_str(req->body, "subject", subject, sizeof subject))
@@ -194,6 +273,13 @@ int ctrl_tasks_create(const HttpRequest *req, HttpResponse *res)
     if (s.type == USER_TYPE_PROF) {
         if (teacher_id_for_session(&s, &teacher_id) != SUCCESS)
             return http_respond_error(res, 403, "teacher profile not found");
+        if (class_id <= 0) {
+            rc = find_authorized_class(class_name, teacher_id, &class_id);
+            if (rc == ERROR_FORBIDDEN) return http_respond_error(res, 403, "not linked to class");
+            if (rc != SUCCESS) return http_respond_error(res, 404, "class not found");
+        } else if (!classes_teacher_has_access(teacher_id, class_id)) {
+            return http_respond_error(res, 403, "not linked to class");
+        }
     } else if (teacher_id <= 0) {
         return http_respond_error(res, 400, "teacher_id required");
     }
@@ -203,11 +289,13 @@ int ctrl_tasks_create(const HttpRequest *req, HttpResponse *res)
     if (rc == ERROR_FORBIDDEN) return http_respond_error(res, 403, "not linked to class");
     if (rc != SUCCESS)         return http_respond_error(res, 400, "create failed");
 
-    char out[512];
+    char out[512], safe_subject[128], safe_title[256];
+    json_escape(t.subject, safe_subject, sizeof safe_subject);
+    json_escape(t.title, safe_title, sizeof safe_title);
     snprintf(out, sizeof out,
         "{\"id\":%lld,\"class_id\":%lld,\"subject\":\"%s\",\"title\":\"%s\","
         "\"due_date\":\"%s\"}",
-        (long long)t.id, (long long)t.class_id, t.subject, t.title, t.due_date);
+        (long long)t.id, (long long)t.class_id, safe_subject, safe_title, t.due_date);
     return http_respond_json(res, 201, out);
 }
 

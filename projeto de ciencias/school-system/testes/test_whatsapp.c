@@ -4,9 +4,13 @@
 #include "whatsapp.h"
 #include "validation.h"
 #include "logger.h"
+#include "database.h"
+#include "users.h"
+#include "classes.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static int passed = 0, failed = 0;
 #define CHECK(expr) do { \
@@ -17,6 +21,9 @@ static int passed = 0, failed = 0;
 int main(void)
 {
     logger_init("logs", LOG_ERROR);
+    const char *db_path = "data/test_whatsapp.db";
+    unlink(db_path); unlink("data/test_whatsapp.db-wal"); unlink("data/test_whatsapp.db-shm");
+    CHECK(database_init(db_path) == SUCCESS);
     CHECK(whatsapp_init() == SUCCESS);
 
     /* Telefone inválido */
@@ -37,12 +44,64 @@ int main(void)
     char reply[256];
     CHECK(whatsapp_receive_message("+551199999", "olá",
                                    reply, sizeof reply) == SUCCESS);
-    CHECK(strlen(reply) > 0);
+    CHECK(strstr(reply, "qual turma") != NULL);
 
     CHECK(whatsapp_receive_message("12345",      "olá", reply, sizeof reply)
           == ERROR_INVALID_PHONE);
 
+    Class class_9a;
+    CHECK(classes_create("9A", "9º ano", SHIFT_MORNING, &class_9a) == SUCCESS);
+    User teacher;
+    CHECK(users_create("Professora", "+5511999990001", USER_TYPE_PROF, NULL, &teacher) == SUCCESS);
+    /* Na Fase 0 o professor não precisa ter turma pré-vinculada. */
+    CHECK(whatsapp_receive_message(teacher.phone,
+          "9A matematica pagina 32 entrega sexta", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Resumo:") != NULL);
+    CHECK(whatsapp_receive_message(teacher.phone, "SIM", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "publicada") != NULL);
+    CHECK(whatsapp_receive_message(teacher.phone,
+          "9A matematica pagina 40 entrega sexta", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Resumo:") != NULL);
+    CHECK(whatsapp_receive_message(teacher.phone,
+          "9A matematica pagina 41 entrega sexta", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "aguardando confirmacao") != NULL);
+    CHECK(whatsapp_receive_message(teacher.phone, "CANCELAR", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "cancelada") != NULL);
+
+    const char *student = "+5511999990002";
+    User student_user;
+    CHECK(users_create("Aluno", student, USER_TYPE_STUD, NULL, &student_user) == SUCCESS);
+    sqlite3_stmt *statement = NULL;
+    CHECK(db_prepare("UPDATE students SET class_id=?,grade=? WHERE user_id=?;", &statement) == SUCCESS);
+    db_bind_int64(statement, 1, class_9a.id);
+    db_bind_text(statement, 2, "9º ano");
+    db_bind_int64(statement, 3, student_user.id);
+    CHECK(sqlite3_step(statement) == SQLITE_DONE);
+    sqlite3_finalize(statement);
+    CHECK(whatsapp_receive_message(student, "Tem tarefa?", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "qual turma") != NULL);
+    CHECK(whatsapp_receive_message(student, "9A", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Tarefas de 9A") != NULL);
+    CHECK(whatsapp_receive_message(student, "2B tem tarefa?", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Tarefas de 9A") != NULL);
+    User coordinator;
+    CHECK(users_create("Coordenação", "+5511999990004", USER_TYPE_COORD, "senha", &coordinator) == SUCCESS);
+    CHECK(whatsapp_receive_message(coordinator.phone,
+          "COMUNICADO: Prova de Portugues dia 10 de outubro", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "qual turma") != NULL);
+    CHECK(whatsapp_receive_message(coordinator.phone, "TODAS", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "publicado") != NULL);
+    CHECK(whatsapp_receive_message(student, "comunicados", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Prova de Portugues") != NULL);
+    CHECK(whatsapp_receive_message("+5511999990003", "8B matematica pagina 2 entrega sexta",
+          reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "nao podem cadastrar tarefas") != NULL);
+    CHECK(whatsapp_receive_message("+5511999990005", "2B tem tarefa?", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Tarefas de 2B") != NULL);
+
     whatsapp_shutdown();
+    database_shutdown();
+    unlink(db_path); unlink("data/test_whatsapp.db-wal"); unlink("data/test_whatsapp.db-shm");
     printf("\nWhatsApp: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

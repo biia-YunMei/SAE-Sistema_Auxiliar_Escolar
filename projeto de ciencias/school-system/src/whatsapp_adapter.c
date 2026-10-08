@@ -13,15 +13,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #if defined(WHATSAPP_USE_CURL)
 #include <curl/curl.h>
 
 struct MemBuf { char *data; size_t size; };
+#define WHATSAPP_RESPONSE_MAX (1024U * 1024U)
 static size_t cb_write(void *ptr, size_t s, size_t n, void *u)
 {
+    if (s && n > SIZE_MAX / s) return 0;
     size_t total = s * n;
     struct MemBuf *m = (struct MemBuf *)u;
+    if (m->size > WHATSAPP_RESPONSE_MAX || total > WHATSAPP_RESPONSE_MAX - m->size)
+        return 0;
     char *p = realloc(m->data, m->size + total + 1);
     if (!p) return 0;
     m->data = p;

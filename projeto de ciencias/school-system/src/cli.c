@@ -74,7 +74,7 @@ static void help(void)
     puts("│                                                                             │");
     puts("├ USUÁRIOS (somente COORD para criar, editar e excluir) ──────────────────────┤");
     puts("│     sae usuario criar -n NOME -p TELEFONE -t TIPO [-s SENHA]                │");
-    puts("│          Tipos: COORD, PROF ou STUD.                                        │");
+    puts("│          Tipos: COORD ou PROF. Aluno é cadastrado pela área da coordenação. │");
     puts("│     sae usuario listar                                                      │");
     puts("│     sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]                 │");
     puts("│     sae usuario excluir -u ID                                               │");

@@ -17,6 +17,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+
+static void class_json_escape(const char *value, char *out, size_t cap)
+{
+    size_t used = 0;
+    for (const unsigned char *p = (const unsigned char *)(value ? value : ""); *p; ++p) {
+        if (*p < 0x20) continue;
+        if (*p == '"' || *p == '\\') {
+            if (used + 2 >= cap) break;
+            out[used++] = '\\';
+        }
+        if (used + 1 >= cap) break;
+        out[used++] = (char)*p;
+    }
+    if (cap) out[used] = '\0';
+}
 
 static int extract_str(const char *b, const char *k, char *o, size_t c)
 {
@@ -46,20 +62,31 @@ static long long extract_int(const char *b, const char *k, long long d)
 }
 static int require_coord(const HttpRequest *req, HttpResponse *res, AuthSession *out)
 {
-    if (!req->auth) return http_respond_error(res, 401, "missing authorization");
-    if (auth_session_resolve(req->auth, out) != SUCCESS)
-        return http_respond_error(res, 401, "invalid session");
-    if (out->type != USER_TYPE_COORD)
-        return http_respond_error(res, 403, "coordinator only");
+    if (!req->auth) {
+        (void)http_respond_error(res, 401, "missing authorization");
+        return ERROR_UNAUTHORIZED;
+    }
+    if (auth_session_resolve(req->auth, out) != SUCCESS) {
+        (void)http_respond_error(res, 401, "invalid session");
+        return ERROR_UNAUTHORIZED;
+    }
+    if (out->type != USER_TYPE_COORD) {
+        (void)http_respond_error(res, 403, "coordinator only");
+        return ERROR_FORBIDDEN;
+    }
     return SUCCESS;
 }
 
 static int require_coord_or_prof(const HttpRequest *req, HttpResponse *res, AuthSession *out)
 {
-    if (!req->auth || auth_session_resolve(req->auth, out) != SUCCESS)
-        return http_respond_error(res, 401, "invalid session");
-    if (out->type != USER_TYPE_COORD && out->type != USER_TYPE_PROF)
-        return http_respond_error(res, 403, "forbidden");
+    if (!req->auth || auth_session_resolve(req->auth, out) != SUCCESS) {
+        (void)http_respond_error(res, 401, "invalid session");
+        return ERROR_UNAUTHORIZED;
+    }
+    if (out->type != USER_TYPE_COORD && out->type != USER_TYPE_PROF) {
+        (void)http_respond_error(res, 403, "forbidden");
+        return ERROR_FORBIDDEN;
+    }
     return SUCCESS;
 }
 
@@ -85,17 +112,35 @@ int ctrl_classes_list(const HttpRequest *req, HttpResponse *res)
     if (classes_list(&list, &n) != SUCCESS)
         return http_respond_error(res, 500, "list failed");
 
-    size_t cap = 256 + n * 512;
+    if (s.type == USER_TYPE_PROF) {
+        long long teacher_id = 0;
+        if (teacher_id_for_user(s.user_id, &teacher_id) != SUCCESS) {
+            free(list);
+            return http_respond_error(res, 403, "teacher profile not found");
+        }
+        size_t kept = 0;
+        for (size_t i = 0; i < n; ++i)
+            if (strcmp(list[i].status, "ACTIVE") == 0 &&
+                classes_teacher_has_access(teacher_id, list[i].id))
+                list[kept++] = list[i];
+        n = kept;
+    }
+
+    if (n > (SIZE_MAX - 256) / 1024) { free(list); return http_respond_error(res, 500, "response too large"); }
+    size_t cap = 256 + n * 1024;
     char *out = (char *)malloc(cap);
     if (!out) { free(list); return http_respond_error(res, 500, "oom"); }
     size_t p = 0;
     p += (size_t)snprintf(out + p, cap - p, "{\"count\":%zu,\"items\":[", n);
     for (size_t i = 0; i < n; i++) {
+        char name[128], grade[64];
+        class_json_escape(list[i].name, name, sizeof name);
+        class_json_escape(list[i].grade, grade, sizeof grade);
         p += (size_t)snprintf(out + p, cap - p,
             "%s{\"id\":%lld,\"name\":\"%s\",\"grade\":\"%s\","
             "\"shift\":\"%s\",\"status\":\"%s\"}",
             i ? "," : "",
-            (long long)list[i].id, list[i].name, list[i].grade,
+            (long long)list[i].id, name, grade,
             class_shift_str(list[i].shift), list[i].status);
     }
     p += (size_t)snprintf(out + p, cap - p, "]}");
@@ -108,7 +153,7 @@ int ctrl_classes_list(const HttpRequest *req, HttpResponse *res)
 int ctrl_classes_create(const HttpRequest *req, HttpResponse *res)
 {
     AuthSession s;
-    int rc = require_coord_or_prof(req, res, &s);
+    int rc = require_coord(req, res, &s);
     if (rc != SUCCESS) return rc;
 
     char name[64]={0}, grade[32]={0}, shift_s[16]={0};
@@ -121,39 +166,23 @@ int ctrl_classes_create(const HttpRequest *req, HttpResponse *res)
     if (rc == ERROR_ALREADY_EXISTS) return http_respond_error(res, 409, "class exists");
     if (rc != SUCCESS)              return http_respond_error(res, 400, "create failed");
 
-    /* O professor que criou a turma deve poder gerenciá-la imediatamente. */
-    if (s.type == USER_TYPE_PROF) {
-        long long teacher_id = 0;
-        if (teacher_id_for_user(s.user_id, &teacher_id) != SUCCESS ||
-            classes_link_teacher(teacher_id, c.id) != SUCCESS)
-            return http_respond_error(res, 400, "link failed");
-    }
-
-    char out[256];
+    char out[512], safe_name[128], safe_grade[64];
+    class_json_escape(c.name, safe_name, sizeof safe_name);
+    class_json_escape(c.grade, safe_grade, sizeof safe_grade);
     snprintf(out, sizeof out,
         "{\"id\":%lld,\"name\":\"%s\",\"grade\":\"%s\",\"shift\":\"%s\"}",
-        (long long)c.id, c.name, c.grade, class_shift_str(c.shift));
+        (long long)c.id, safe_name, safe_grade, class_shift_str(c.shift));
     return http_respond_json(res, 201, out);
-}
-
-static int class_management_allowed(const AuthSession *session, long long class_id)
-{
-    if (session->type == USER_TYPE_COORD) return 1;
-    long long teacher_id = 0;
-    return teacher_id_for_user(session->user_id, &teacher_id) == SUCCESS &&
-           classes_teacher_has_access(teacher_id, class_id);
 }
 
 int ctrl_classes_update(const HttpRequest *req, HttpResponse *res, const char *id_str)
 {
     AuthSession session;
-    int rc = require_coord_or_prof(req, res, &session);
+    int rc = require_coord(req, res, &session);
     if (rc != SUCCESS) return rc;
 
     long long class_id = strtoll(id_str, NULL, 10);
     if (class_id <= 0) return http_respond_error(res, 400, "id required");
-    if (!class_management_allowed(&session, class_id))
-        return http_respond_error(res, 403, "forbidden");
 
     char name[64] = {0}, grade[32] = {0}, shift_s[16] = {0};
     if (!extract_str(req->body, "name", name, sizeof name))
@@ -174,13 +203,11 @@ int ctrl_classes_update(const HttpRequest *req, HttpResponse *res, const char *i
 int ctrl_classes_delete(const HttpRequest *req, HttpResponse *res, const char *id_str)
 {
     AuthSession session;
-    int rc = require_coord_or_prof(req, res, &session);
+    int rc = require_coord(req, res, &session);
     if (rc != SUCCESS) return rc;
 
     long long class_id = strtoll(id_str, NULL, 10);
     if (class_id <= 0) return http_respond_error(res, 400, "id required");
-    if (!class_management_allowed(&session, class_id))
-        return http_respond_error(res, 403, "forbidden");
     rc = classes_delete(class_id);
     if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "class not found");
     if (rc != SUCCESS) return http_respond_error(res, 400, "delete failed");

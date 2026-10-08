@@ -22,6 +22,7 @@
  * implementação de SHA-256 (didática, suficiente para a feira). */
 #if defined(HAVE_OPENSSL_SHA)
 #  include <openssl/sha.h>
+#  include <openssl/rand.h>
 #endif
 
 #ifndef HAVE_OPENSSL_SHA
@@ -110,27 +111,21 @@ static void to_hex(const uint8_t *src, size_t n, char *dst)
     dst[n*2] = '\0';
 }
 
-static void random_salt_hex(char *out, size_t hex_len)
+static int random_salt_hex(char *out)
 {
     /* 16 bytes -> 32 hex chars. */
     uint8_t salt[16];
+#if defined(HAVE_OPENSSL_SHA)
+    if (RAND_bytes(salt, (int)sizeof salt) != 1) return ERROR_INTERNAL;
+#else
     FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        (void)!fread(salt, 1, sizeof salt, f);
-        fclose(f);
-    } else {
-        /* Fallback LCG (mesmo do auth.c): só roda em sistemas
-         * sem /dev/urandom, o que é raro em Linux/macOS. */
-        static uint64_t seed = 0;
-        if (seed == 0) seed = (uint64_t)time(NULL);
-        uint64_t v = seed * 6364136223846793005ULL + 1442695040888963407ULL;
-        for (size_t i = 0; i < sizeof salt; i++) {
-            v = v * 2862933555777941757ULL + 3037000493ULL;
-            salt[i] = (uint8_t)(v >> 56);
-        }
-    }
+    if (!f) return ERROR_INTERNAL;
+    size_t read_count = fread(salt, 1, sizeof salt, f);
+    fclose(f);
+    if (read_count != sizeof salt) return ERROR_INTERNAL;
+#endif
     to_hex(salt, sizeof salt, out);
-    (void)hex_len;
+    return SUCCESS;
 }
 
 /* ===================== helpers =================================== */
@@ -168,7 +163,7 @@ int users_hash_password(const char *plain, char *out_hex, size_t cap)
 {
     if (!plain || !out_hex || cap < 80) return ERROR_INVALID_INPUT;
     char salt[33];
-    random_salt_hex(salt, sizeof salt);
+    if (random_salt_hex(salt) != SUCCESS) return ERROR_INTERNAL;
 
     char buf[256];
     int n = snprintf(buf, sizeof buf, "%s|%s", salt, plain);
@@ -266,26 +261,29 @@ int users_create(const char *name, const char *phone,
         if (rc != SUCCESS) return rc;
     }
 
+    int own_transaction = sqlite3_get_autocommit(database_get()) != 0;
+    if (own_transaction && db_begin() != SUCCESS) return ERROR_DATABASE;
+
     sqlite3_stmt *st = NULL;
     int rc = db_prepare(
         "INSERT INTO users(name, phone, user_type, password_hash) "
         "VALUES(?,?,?,?);", &st);
-    if (rc != SUCCESS) return rc;
+    if (rc != SUCCESS) goto fail;
 
     rc = db_bind_text(st, 1, name);
     if (rc == SUCCESS) rc = db_bind_text(st, 2, phone);
     if (rc == SUCCESS) rc = db_bind_text(st, 3, user_type_str(type));
     if (rc == SUCCESS) rc = plain_password ? db_bind_text(st, 4, hash) : db_bind_null(st, 4);
-    if (rc != SUCCESS) { sqlite3_finalize(st); return rc; }
+    if (rc != SUCCESS) { sqlite3_finalize(st); goto fail; }
 
     rc = sqlite3_step(st);
     sqlite3_finalize(st);
     if (rc != SQLITE_DONE) {
-        if (rc == SQLITE_CONSTRAINT) return ERROR_ALREADY_EXISTS;
-        return ERROR_DATABASE;
+        rc = rc == SQLITE_CONSTRAINT ? ERROR_ALREADY_EXISTS : ERROR_DATABASE;
+        goto fail;
     }
     rc = users_find_by_phone(phone, out);
-    if (rc != SUCCESS) return rc;
+    if (rc != SUCCESS) goto fail;
 
     /* Estes perfis são necessários para vínculos de turmas e tarefas.
      * Criá-los aqui garante o mesmo resultado para API, CLI e testes. */
@@ -295,13 +293,21 @@ int users_create(const char *name, const char *phone,
             : "INSERT INTO students(user_id) VALUES(?);";
         st = NULL;
         rc = db_prepare(sql, &st);
-        if (rc != SUCCESS) return rc;
+        if (rc != SUCCESS) goto fail;
         db_bind_int64(st, 1, (long long)out->id);
         rc = sqlite3_step(st);
         sqlite3_finalize(st);
-        if (rc != SQLITE_DONE) return ERROR_DATABASE;
+        if (rc != SQLITE_DONE) { rc = ERROR_DATABASE; goto fail; }
+    }
+    if (own_transaction && db_commit() != SUCCESS) {
+        (void)db_rollback();
+        return ERROR_DATABASE;
     }
     return SUCCESS;
+
+fail:
+    if (own_transaction) (void)db_rollback();
+    return rc;
 }
 
 int users_find_by_phone(const char *phone, User *out)

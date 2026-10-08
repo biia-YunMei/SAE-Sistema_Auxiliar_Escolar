@@ -1,0 +1,98 @@
+[2026-10-07 13:26:55] [ERROR] [server.c:343] socket: Operation not permitted
+[2026-10-07 13:33:41] [ERROR] [server.c:343] socket: Operation not permitted
+[2026-10-07 15:13:51] [ERROR] [server.c:343] socket: Operation not permitted
+[2026-10-07 15:15:01] [ERROR] [server.c:343] socket: Operation not permitted
+[2026-10-07 15:21:35] [ERROR] [server.c:344] socket: Operation not permitted
+[2026-10-07 15:22:26] [ERROR] [server.c:344] socket: Operation not permitted
+[2026-10-07 15:30:41] [INFO] [main.c:105] === School Backend iniciando ===
+[2026-10-07 15:30:41] [INFO] [main.c:106] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-10-07 15:30:41] [INFO] [database.c:118] Schema versão atual: 13
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #14
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #15
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #16
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #17
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #18
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #19
+[2026-10-07 15:30:41] [INFO] [database.c:311] Aplicando migration #20
+[2026-10-07 15:30:41] [INFO] [database.c:357] Banco inicializado em data/school.db
+[2026-10-07 15:30:41] [INFO] [whatsapp.c:35] whatsapp: modulo inicializado
+[2026-10-07 15:30:41] [INFO] [main.c:128] Rotas registradas: 32
+[2026-10-07 15:30:41] [INFO] [server.c:361] HTTP server escutando em 0.0.0.0:8080
+[2026-10-07 15:31:41] [INFO] [server.c:309] POST /api/auth body=43
+[2026-10-07 15:38:00] [INFO] [server.c:309] GET / body=0
+[2026-10-07 15:38:00] [INFO] [server.c:309] GET /favicon.ico body=0
+[2026-10-07 15:41:29] [INFO] [main.c:139] === School Backend finalizando ===
+[2026-10-07 15:44:04] [INFO] [main.c:105] === School Backend iniciando ===
+[2026-10-07 15:44:04] [INFO] [main.c:106] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-10-07 15:44:04] [INFO] [database.c:118] Schema versão atual: 20
+[2026-10-07 15:44:04] [INFO] [database.c:357] Banco inicializado em data/school.db
+[2026-10-07 15:44:04] [INFO] [whatsapp.c:35] whatsapp: modulo inicializado
+[2026-10-07 15:44:04] [INFO] [main.c:128] Rotas registradas: 32
+[2026-10-07 15:44:04] [INFO] [server.c:361] HTTP server escutando em 0.0.0.0:8080
+[2026-10-07 15:46:44] [INFO] [server.c:309] POST /api/auth body=43
+[2026-10-07 15:51:19] [INFO] [main.c:139] === School Backend finalizando ===
+[2026-10-07 15:51:37] [INFO] [main.c:105] === School Backend iniciando ===
+[2026-10-07 15:51:37] [INFO] [main.c:106] Servidor 0.0.0.0:8080 | Banco: data/school.db
+[2026-10-07 15:51:37] [INFO] [database.c:118] Schema versão atual: 20
+[2026-10-07 15:51:37] [INFO] [database.c:357] Banco inicializado em data/school.db
+[2026-10-07 15:51:37] [INFO] [whatsapp.c:35] whatsapp: modulo inicializado
+[2026-10-07 15:51:37] [INFO] [main.c:128] Rotas registradas: 32
+[2026-10-07 15:51:37] [INFO] [server.c:361] HTTP server escutando em 0.0.0.0:8080
+[2026-10-07 15:51:43] [INFO] [server.c:309] GET /setup.html body=0
+[2026-10-07 15:51:43] [INFO] [server.c:309] GET /css/style.css body=0
+[2026-10-07 15:51:43] [INFO] [server.c:309] GET /js/script.js body=0
+[2026-10-07 15:51:43] [INFO] [server.c:309] GET /js/api.js body=0
+[2026-10-07 15:51:44] [INFO] [server.c:309] GET /favicon.ico body=0
+[2026-10-07 15:54:04] [INFO] [server.c:309] GET / body=0
+[2026-10-07 15:54:04] [INFO] [server.c:309] GET /css/style.css body=0
+[2026-10-07 15:54:04] [INFO] [server.c:309] GET /js/api.js body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] POST /api/auth body=43
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /coordenacao.html body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /js/script.js body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /css/style.css body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /js/api.js body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /api/students body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 15:54:21] [INFO] [server.c:309] GET /api/notices body=0
+[2026-10-07 15:54:29] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 15:54:29] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 15:54:29] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 15:54:31] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 15:54:31] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 15:54:31] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 15:56:02] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 15:56:02] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 15:56:02] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:00:22] [INFO] [server.c:309] POST /api/teachers body=75
+[2026-10-07 16:00:23] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:02:14] [INFO] [server.c:309] DELETE /api/teachers/2 body=0
+[2026-10-07 16:02:14] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:02:19] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:02:19] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:02:19] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:02:21] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:02:21] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:02:21] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:11:15] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:11:15] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:11:15] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:11:15] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:11:15] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:11:15] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:11:16] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:11:16] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:11:16] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:11:31] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:11:31] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:11:31] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:33:51] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:33:51] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:33:51] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:34:16] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:34:16] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:34:16] [INFO] [server.c:309] GET /api/teachers body=0
+[2026-10-07 16:36:00] [INFO] [server.c:309] GET /api/tasks body=0
+[2026-10-07 16:36:00] [INFO] [server.c:309] GET /api/classes body=0
+[2026-10-07 16:36:00] [INFO] [server.c:309] GET /api/teachers body=0

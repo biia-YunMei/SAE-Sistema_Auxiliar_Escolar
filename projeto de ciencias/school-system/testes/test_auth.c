@@ -46,8 +46,10 @@ int main(void)
 
     CHECK(users_create("Prof B",  "+5511999990002", USER_TYPE_PROF,  NULL, &u)
           == SUCCESS);
-    CHECK(users_create("Aluno C", "+5511999990003", USER_TYPE_STUD,  NULL, &u)
+    int64_t teacher_user_id = u.id;
+    CHECK(users_create("Aluno C", "+5511999990003", USER_TYPE_STUD,  "senhaAluno", &u)
           == SUCCESS);
+    int64_t student_user_id = u.id;
 
     /* Telefone inválido */
     CHECK(users_create("X", "abc", USER_TYPE_STUD, NULL, &u)
@@ -66,6 +68,16 @@ int main(void)
     CHECK(s.type == USER_TYPE_COORD);
     CHECK(auth_login_phone("+5511999990001", "errada", &s) == ERROR_UNAUTHORIZED);
     CHECK(auth_login_phone("+5511000000000", NULL,    &s) == ERROR_UNAUTHORIZED);
+    CHECK(auth_login_phone("+5511999990002", NULL, &s) == SUCCESS);
+    CHECK(s.type == USER_TYPE_PROF);
+    CHECK(auth_login_phone("+5511999990003", "senhaAluno", &s) == ERROR_UNAUTHORIZED);
+
+    sqlite3_stmt *student_query = NULL;
+    CHECK(db_prepare("SELECT grade FROM students WHERE user_id=?;", &student_query) == SUCCESS);
+    db_bind_int64(student_query, 1, (long long)student_user_id);
+    CHECK(sqlite3_step(student_query) == SQLITE_ROW);
+    CHECK(strcmp((const char *)sqlite3_column_text(student_query, 0), "") == 0);
+    sqlite3_finalize(student_query);
 
     /* Token */
     char token[80];
@@ -75,6 +87,10 @@ int main(void)
     CHECK(auth_session_resolve(token, &r) == SUCCESS);
     CHECK(r.user_id == s.user_id);
     CHECK(auth_session_revoke(token) == SUCCESS);
+    CHECK(auth_session_resolve(token, &r) == ERROR_UNAUTHORIZED);
+
+    CHECK(auth_session_create(&s, token, sizeof token) == SUCCESS);
+    CHECK(users_delete(teacher_user_id) == SUCCESS);
     CHECK(auth_session_resolve(token, &r) == ERROR_UNAUTHORIZED);
 
     database_shutdown();

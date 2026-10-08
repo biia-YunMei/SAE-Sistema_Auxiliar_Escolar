@@ -38,7 +38,7 @@ Núcleo do sistema que:
 Módulos isolados (não conhecem o banco):
   src/whatsapp.c      → abstração do canal
   src/whatsapp_adapter.c → libcurl (opt-in via -DWHATSAPP_USE_CURL)
-  src/ai.c            → IA local/remota (opt-in via -DAI_USE_REMOTE)
+  src/ai.c            → IA local/remota (remota ativada com libcurl e configuração)
   src/transcription.c → áudio
   src/image.c         → visão
   src/conversations.c → máquina de estados
@@ -99,12 +99,10 @@ Documentação complementar:
 ```bash
 sudo apt update
 sudo apt install -y build-essential pkg-config libsqlite3-dev libcurl4-openssl-dev libssl-dev
-make tests
-make sanitize
 make
 ```
 
-O binário resultante é `../school-system-artifacts/sae`. As bibliotecas cURL e OpenSSL
+O binário resultante é `~/.cache/school-system-artifacts/sae`. As bibliotecas cURL e OpenSSL
 são detectadas automaticamente pelo `pkg-config`; o sistema continua compilando
 sem cURL quando os adaptadores remotos não forem habilitados.
 
@@ -133,13 +131,13 @@ pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make \
 make
 ```
 
-O executável será `../school-system-artifacts/sae.exe`. Adicione essa pasta ao `PATH` para usar
+O executável será `~/.cache/school-system-artifacts/sae.exe`. Adicione essa pasta ao `PATH` para usar
 o comando `sae` em qualquer diretório.
 
 ## 5. Compilação
 
 ```bash
-make            # release (auto-detecta libs instaladas)
+make            # compila, executa os testes e instala o comando sae
 make debug      # com -g -DDEBUG
 make sanitize   # com AddressSanitizer + UBSan
 make tests      # roda todos os test_*
@@ -147,15 +145,22 @@ make clean
 ```
 
 Por padrão, o executável, objetos e testes compilados são gerados em
-`../school-system-artifacts`, uma pasta fora do repositório. Para escolher
+`~/.cache/school-system-artifacts`, uma pasta fora do repositório. Para escolher
 outro local, use `make ARTIFACT_DIR=/caminho/desejado`.
 
-Para ativar o adapter WhatsApp/IA remoto:
+Com libcurl instalado, o adaptador do WhatsApp e o cliente de IA remota são
+incluídos automaticamente no build. Para configurar a IA, copie `.env.example`
+para `.env` e informe a chave e o identificador do modelo:
 
 ```bash
-make CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -DWHATSAPP_USE_CURL -DAI_USE_REMOTE' \
-     LDFLAGS='-lcurl'
+cp .env.example .env
+# Edite AI_API_KEY e AI_MODEL dentro do .env
+make
 ```
+
+Sem chave/modelo, as rotinas continuam no modo local. Veja
+[`docs/CONFIGURACAO_E_PORTABILIDADE.md`](docs/CONFIGURACAO_E_PORTABILIDADE.md)
+para as variáveis de configuração.
 
 ## 6. Execução e primeiros passos
 
@@ -164,6 +169,10 @@ make CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -DWHATSAPP_USE_CURL -DAI_USE_REMO
 make
 sae servidor
 ```
+
+Com o servidor ativo, abra `http://127.0.0.1:8080/` no navegador. O front-end é
+servido pelo próprio SAE; use `http://127.0.0.1:8080/setup.html` para o cadastro
+inicial e não abra os arquivos HTML diretamente com `file://`.
 
 Sinais `SIGINT`/`SIGTERM` finalizam o servidor limpando recursos.
 
@@ -234,9 +243,11 @@ SAE_UI=plain sae turma listar    # força a saída simples
 | POST   | /api/auth                | público | login por telefone |
 | POST   | /api/auth/logout         | logado | encerra a sessão |
 | POST   | /api/bootstrap           | público | cria o primeiro coordenador |
-| POST   | /api/users               | COORD   | cadastra usuário |
+| POST   | /api/users               | COORD   | cadastra coordenador ou professor |
 | GET    | /api/users               | COORD/PROF | lista usuários |
 | PUT/DELETE | /api/users/:id        | COORD   | edita/exclui usuário |
+| GET/POST | /api/students          | COORD   | lista/cadastra alunos sem criar login |
+| POST   | /api/students/class      | COORD/PROF vinculado | vincula aluno a turma |
 | GET    | /api/classes             | COORD/PROF | lista turmas |
 | POST   | /api/classes             | COORD/PROF | cria turma |
 | PUT/DELETE | /api/classes/:id      | COORD/PROF vinculado | edita/exclui turma |
@@ -250,7 +261,7 @@ SAE_UI=plain sae turma listar    # força a saída simples
 
 ## 9. Autenticação e permissões
 
-* Login: `POST /api/auth` com `{phone, password}`.
+* Login: `POST /api/auth` com `{phone, password}`. Alunos são recusados e não possuem login.
 * Token opaco (hex 64 chars) devolvido e usado em `Authorization: Bearer <token>`.
 * Sessões em memória com TTL (`SESSION_TIMEOUT_MIN`).
 * **Toda rota, exceto saúde, login, bootstrap e webhook, exige login.**
@@ -260,7 +271,7 @@ SAE_UI=plain sae turma listar    # força a saída simples
 |---|---|
 | `COORD` | Todos os comandos administrativos e operacionais. |
 | `PROF` | Listar usuários; criar/listar/editar/excluir suas turmas; vincular alunos em suas turmas; criar/listar/editar/excluir suas tarefas; enviar WhatsApp. |
-| `STUD` | Listar apenas as tarefas da própria turma. |
+| `STUD` | Sem login; nome, telefone e série são cadastrados pela coordenação. Consulta atividades pelo WhatsApp. |
 
 ## 10. Banco de Dados
 
@@ -310,7 +321,8 @@ Aluno (WhatsApp)
 ## 13. Testes
 
 ```bash
-make tests
+make            # build + suíte automatizada
+make tests      # executa somente a suíte
 ```
 
 Cobre:

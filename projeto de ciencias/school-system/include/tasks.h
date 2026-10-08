@@ -53,4 +53,7 @@ int tasks_list_by_class(int64_t class_id, bool include_archived,
 int tasks_list_by_teacher(int64_t teacher_id, bool include_archived,
                           Task **out, size_t *count);
 
+/* Lista o histórico global (uso exclusivo da coordenação via API). */
+int tasks_list_all(bool include_archived, Task **out, size_t *count);
+
 #endif /* SCHOOL_TASKS_H */

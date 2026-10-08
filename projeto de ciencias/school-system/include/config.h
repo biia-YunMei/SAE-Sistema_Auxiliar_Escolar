@@ -16,6 +16,9 @@ typedef struct {
     /* Banco */
     char  database_path[256];
 
+    /* Front-end estático do SAE */
+    char  web_root[512];
+
     /* Logs */
     char  log_dir[256];
     char  log_level[8];           /* DEBUG | INFO | WARN | ERROR */

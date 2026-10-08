@@ -127,14 +127,23 @@ int auth_login_phone(const char *phone, const char *password, AuthSession *out)
         return ERROR_UNAUTHORIZED;
     }
 
+    /* Alunos não possuem acesso por login; seus dados são apenas cadastrais. */
+    if (user.type == USER_TYPE_STUD) {
+        register_login_result(phone, 0);
+        return ERROR_UNAUTHORIZED;
+    }
+
     sqlite3_stmt *statement = NULL;
     if (db_prepare("SELECT password_hash FROM users WHERE id=?;", &statement) != SUCCESS)
         return ERROR_DATABASE;
     db_bind_int64(statement, 1, (long long)user.id);
     int found = sqlite3_step(statement) == SQLITE_ROW;
     const unsigned char *hash = found ? sqlite3_column_text(statement, 0) : NULL;
-    int valid = found && hash && password && *password &&
-                users_verify_password(password, (const char *)hash) == SUCCESS;
+    /* Professor cadastrado é autenticado pelo WhatsApp, conforme regra do
+     * produto. Coordenadores continuam protegidos por senha. */
+    int valid = found && user.type == USER_TYPE_PROF;
+    if (found && user.type != USER_TYPE_PROF && hash && password && *password)
+        valid = users_verify_password(password, (const char *)hash) == SUCCESS;
     sqlite3_finalize(statement);
     if (!valid) {
         register_login_result(phone, 0);
@@ -195,6 +204,29 @@ int auth_session_resolve(const char *token, AuthSession *out)
         break;
     }
     pthread_mutex_unlock(&g_auth_mutex);
+    if (result == SUCCESS) {
+        AuthSession snapshot;
+        if (out) snapshot = *out;
+        else {
+            /* O token continua válido somente enquanto a conta existir e
+             * estiver autorizada no cadastro. */
+            pthread_mutex_lock(&g_auth_mutex);
+            int found = 0;
+            for (int i = 0; i < AUTH_MAX_SESSIONS; ++i)
+                if (g_sessions[i].used && strcmp(g_sessions[i].token, token) == 0) {
+                    snapshot = g_sessions[i].session; found = 1; break;
+                }
+            pthread_mutex_unlock(&g_auth_mutex);
+            if (!found) return ERROR_UNAUTHORIZED;
+        }
+        User current;
+        if (users_find_by_id(snapshot.user_id, &current) != SUCCESS ||
+            current.status != USER_STATUS_ACTIVE) {
+            (void)auth_session_revoke(token);
+            return ERROR_UNAUTHORIZED;
+        }
+        if (out) *out = snapshot;
+    }
     return result;
 }
 

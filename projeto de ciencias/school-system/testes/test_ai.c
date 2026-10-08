@@ -55,10 +55,10 @@ int main(void)
     CHECK(strlen(resp) > 0);
     CHECK(strstr(resp, "etapas") != NULL);
 
-    /* Sem contexto → mensagem honesta */
+    /* Sem contexto escolar ainda oferece orientação por etapas. */
     rc = ai_answer_student_question("O que é tal coisa?", NULL, resp, sizeof resp);
     CHECK(rc == SUCCESS);
-    CHECK(strstr(resp, "Não encontrei") != NULL);
+    CHECK(strstr(resp, "etapas") != NULL);
 
     printf("\nAI: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;

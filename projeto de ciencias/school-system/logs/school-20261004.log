@@ -1,0 +1,8 @@
+[2026-10-04 13:29:28] [ERROR] [server.c:339] socket: Operation not permitted
+[2026-10-04 13:30:11] [ERROR] [database.c:401] db_exec falhou: FOREIGN KEY constraint failed | sql=INSERT INTO teachers(user_id) VALUES(2);
+[2026-10-04 13:31:52] [ERROR] [database.c:362] db_prepare falhou: no such table: users | sql=SELECT id, name, phone, user_type, status, created_at FROM users WHERE phone=? L
+[2026-10-04 13:31:52] [ERROR] [database.c:362] db_prepare falhou: no such table: anonymous_students | sql=SELECT pending_question FROM anonymous_students WHERE phone=?;
+[2026-10-04 13:31:52] [ERROR] [database.c:362] db_prepare falhou: no such table: classes | sql=SELECT id,name,grade,shift,status FROM classes;
+[2026-10-04 13:31:52] [ERROR] [database.c:362] db_prepare falhou: no such table: anonymous_students | sql=SELECT class_id FROM anonymous_students WHERE phone=?;
+[2026-10-04 13:31:52] [ERROR] [database.c:362] db_prepare falhou: no such table: anonymous_students | sql=SELECT pending_question FROM anonymous_students WHERE phone=?;
+[2026-10-04 13:36:39] [ERROR] [server.c:339] socket: Operation not permitted

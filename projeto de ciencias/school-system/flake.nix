@@ -26,7 +26,7 @@
             ];
 
             shellHook = ''
-              echo "Ambiente School System pronto. Execute: make tests"
+              echo "Ambiente School System pronto. Execute: make"
             '';
           };
         });

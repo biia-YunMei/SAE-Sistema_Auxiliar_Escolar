@@ -14,6 +14,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+
+static void users_json_escape(const char *value, char *out, size_t cap)
+{
+    size_t used = 0;
+    for (const unsigned char *p = (const unsigned char *)(value ? value : ""); *p; ++p) {
+        if (*p < 0x20) continue;
+        if (*p == '"' || *p == '\\') {
+            if (used + 2 >= cap) break;
+            out[used++] = '\\';
+        }
+        if (used + 1 >= cap) break;
+        out[used++] = (char)*p;
+    }
+    if (cap) out[used] = '\0';
+}
 
 static int extract_str(const char *b, const char *k, char *o, size_t c)
 {
@@ -32,11 +48,18 @@ static int extract_str(const char *b, const char *k, char *o, size_t c)
 
 static int require_coord(const HttpRequest *req, HttpResponse *res, AuthSession *out)
 {
-    if (!req->auth) return http_respond_error(res, 401, "missing authorization");
-    if (auth_session_resolve(req->auth, out) != SUCCESS)
-        return http_respond_error(res, 401, "invalid session");
-    if (out->type != USER_TYPE_COORD)
-        return http_respond_error(res, 403, "coordinator only");
+    if (!req->auth) {
+        (void)http_respond_error(res, 401, "missing authorization");
+        return ERROR_UNAUTHORIZED;
+    }
+    if (auth_session_resolve(req->auth, out) != SUCCESS) {
+        (void)http_respond_error(res, 401, "invalid session");
+        return ERROR_UNAUTHORIZED;
+    }
+    if (out->type != USER_TYPE_COORD) {
+        (void)http_respond_error(res, 403, "coordinator only");
+        return ERROR_FORBIDDEN;
+    }
     return SUCCESS;
 }
 
@@ -55,16 +78,19 @@ int ctrl_users_create(const HttpRequest *req, HttpResponse *res)
 
     UserType t = user_type_from(type_s);
     if (t == USER_TYPE_INVALID) return http_respond_error(res, 400, "invalid type");
+    if (t == USER_TYPE_STUD)
+        return http_respond_error(res, 400, "use student registration");
 
     User u;
     rc = users_create(name, phone, t, pass[0] ? pass : NULL, &u);
     if (rc == ERROR_ALREADY_EXISTS) return http_respond_error(res, 409, "phone already registered");
     if (rc != SUCCESS)              return http_respond_error(res, 400, "create failed");
 
-    char out[256];
+    char out[512], safe_name[256];
+    users_json_escape(u.name, safe_name, sizeof safe_name);
     snprintf(out, sizeof out,
         "{\"id\":%lld,\"name\":\"%s\",\"phone\":\"%s\",\"type\":\"%s\"}",
-        (long long)u.id, u.name, u.phone, user_type_str(u.type));
+        (long long)u.id, safe_name, u.phone, user_type_str(u.type));
     return http_respond_json(res, 201, out);
 }
 
@@ -73,7 +99,7 @@ int ctrl_users_list(const HttpRequest *req, HttpResponse *res)
     AuthSession s;
     if (!req->auth || auth_session_resolve(req->auth, &s) != SUCCESS)
         return http_respond_error(res, 401, "invalid session");
-    if (s.type != USER_TYPE_COORD && s.type != USER_TYPE_PROF)
+    if (s.type != USER_TYPE_COORD)
         return http_respond_error(res, 403, "forbidden");
 
     sqlite3_stmt *st = NULL;
@@ -82,22 +108,26 @@ int ctrl_users_list(const HttpRequest *req, HttpResponse *res)
 
     size_t cap = 256;
     char *out = (char *)malloc(cap);
+    if (!out) { sqlite3_finalize(st); return http_respond_error(res, 500, "oom"); }
     size_t p = 0;
     int count = 0;
     p += (size_t)snprintf(out + p, cap - p, "{\"items\":[");
     while (sqlite3_step(st) == SQLITE_ROW) {
-        if (p + 512 > cap) {
+        if (p + 1200 > cap) {
+            if (cap > SIZE_MAX / 2) { free(out); sqlite3_finalize(st); return http_respond_error(res, 500, "response too large"); }
             cap *= 2;
             char *q = (char *)realloc(out, cap);
             if (!q) { free(out); sqlite3_finalize(st); return http_respond_error(res, 500, "oom"); }
             out = q;
         }
+        char safe_name[768];
+        users_json_escape((const char *)sqlite3_column_text(st, 1), safe_name, sizeof safe_name);
         p += (size_t)snprintf(out + p, cap - p,
             "%s{\"id\":%lld,\"name\":\"%s\",\"phone\":\"%s\","
             "\"type\":\"%s\",\"status\":\"%s\"}",
             count ? "," : "",
             (long long)sqlite3_column_int64(st, 0),
-            (const char *)sqlite3_column_text(st, 1),
+            safe_name,
             (const char *)sqlite3_column_text(st, 2),
             (const char *)sqlite3_column_text(st, 3),
             (const char *)sqlite3_column_text(st, 4));

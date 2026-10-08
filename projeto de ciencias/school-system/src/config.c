@@ -99,6 +99,7 @@ int config_load(AppConfig *out)
     out->server_port = parse_int_env("SERVER_PORT", 8080);
 
     copy_str(out->database_path, sizeof out->database_path, getenv("DATABASE_PATH"), "data/school.db");
+    copy_str(out->web_root, sizeof out->web_root, getenv("WEB_ROOT"), "../../ScienceFair2026");
     copy_str(out->log_dir,        sizeof out->log_dir,        getenv("LOG_DIR"),        "logs");
     copy_str(out->log_level,      sizeof out->log_level,      getenv("LOG_LEVEL"),      "INFO");
     copy_str(out->media_dir,      sizeof out->media_dir,      getenv("MEDIA_DIR"),      "data/media");
@@ -111,9 +112,9 @@ int config_load(AppConfig *out)
     copy_str(out->whatsapp_app_secret, sizeof out->whatsapp_app_secret,
              getenv("WHATSAPP_APP_SECRET"), "");
 
-    copy_str(out->ai_api_url, sizeof out->ai_api_url, getenv("AI_API_URL"), "");
+    copy_str(out->ai_api_url, sizeof out->ai_api_url, getenv("AI_API_URL"), "https://api.anthropic.com/v1/messages");
     copy_str(out->ai_api_key, sizeof out->ai_api_key, getenv("AI_API_KEY"), "");
-    copy_str(out->ai_model,  sizeof out->ai_model,  getenv("AI_MODEL"),  "claude-sonnet-5");
+    copy_str(out->ai_model,  sizeof out->ai_model,  getenv("AI_MODEL"),  "");
 
     copy_str(out->transcription_api_url, sizeof out->transcription_api_url, getenv("TRANSCRIPTION_API_URL"), "");
     copy_str(out->transcription_api_key, sizeof out->transcription_api_key, getenv("TRANSCRIPTION_API_KEY"), "");

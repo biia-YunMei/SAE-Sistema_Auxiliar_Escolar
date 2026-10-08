@@ -21,8 +21,8 @@ pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make \
   mingw-w64-ucrt-x86_64-curl mingw-w64-ucrt-x86_64-openssl
 ```
 
-Compile com `make`. O resultado é `../school-system-artifacts/sae` no Linux e
-`../school-system-artifacts/sae.exe` no Windows. Objetos e binários de testes
+Compile com `make`. O resultado padrão é `~/.cache/school-system-artifacts/sae` no Linux e
+`~/.cache/school-system-artifacts/sae.exe` no Windows. Objetos e binários de testes
 também são guardados nessa pasta irmã, fora do repositório. Para escolher outro
 local, execute `make ARTIFACT_DIR=/caminho/desejado`. No NixOS, use o
 `flake.nix` do repositório para abrir o ambiente de desenvolvimento antes de
@@ -37,6 +37,7 @@ projeto. O `.env` não deve ser enviado ao Git.
 |---|---|---|
 | `SERVER_HOST` | `0.0.0.0` | Endereço do servidor HTTP. |
 | `SERVER_PORT` | `8080` | Porta HTTP. |
+| `WEB_ROOT` | `../../ScienceFair2026` | Diretório das páginas estáticas. Relativo à pasta de execução do servidor. |
 | `DATABASE_PATH` | `data/school.db` | Arquivo SQLite. |
 | `LOG_DIR` | `logs` | Diretório de logs. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARN` ou `ERROR`. |
@@ -45,15 +46,41 @@ projeto. O `.env` não deve ser enviado ao Git.
 | `WHATSAPP_API_TOKEN` | vazio | Token da API do WhatsApp. |
 | `WHATSAPP_PHONE_NUMBER_ID` | vazio | Identificador do número WhatsApp. |
 | `WHATSAPP_VERIFY_TOKEN` | vazio | Token de verificação do webhook. |
-| `WHATSAPP_APP_SECRET` | vazio | Segredo para validar o webhook. |
+| `WHATSAPP_APP_SECRET` | vazio | Obrigatório para receber POSTs do webhook; valida a assinatura `X-Hub-Signature-256`. |
+| `AI_API_URL` | `https://api.anthropic.com/v1/messages` | Endpoint Messages API compatível com Anthropic. |
+| `AI_API_KEY` | vazio | Chave privada da API. Sem chave usa o modo local; nunca coloque no front-end nem no Git. |
+| `AI_MODEL` | vazio | Identificador do modelo disponibilizado pelo provedor. |
 
 Exemplo mínimo:
 
 ```dotenv
 SERVER_PORT=8080
+WEB_ROOT=../../ScienceFair2026
 SESSION_TIMEOUT_MIN=60
 LOG_LEVEL=INFO
 ```
+
+### Ativar a integração de IA
+
+Copie `.env.example` para `.env` e preencha `AI_API_KEY` e `AI_MODEL`. O endpoint padrão
+é a API Messages da Anthropic; `AI_API_URL` pode apontar para um gateway compatível.
+Quando libcurl está instalado, `make` habilita o cliente remoto automaticamente.
+Sem a chave ou o modelo, o servidor mantém o comportamento local de demonstração.
+As chamadas remotas extraem e validam os campos da tarefa antes de pedir confirmação
+ao professor, e geram orientação ao aluno usando apenas o contexto escolar fornecido.
+O servidor nunca envia a chave ao navegador. Áudio e imagens continuam dependendo dos
+adaptadores próprios de transcrição e visão.
+
+```bash
+cp .env.example .env
+# Edite .env e informe AI_API_KEY e AI_MODEL
+make
+sae servidor
+```
+
+Com o servidor ativo, abra `http://127.0.0.1:8080/` para usar o site e
+`http://127.0.0.1:8080/setup.html` para o cadastro inicial. As páginas usam a
+API na mesma origem; não abra os HTML diretamente com `file://`.
 
 ## Arquivos locais ignorados pelo Git
 

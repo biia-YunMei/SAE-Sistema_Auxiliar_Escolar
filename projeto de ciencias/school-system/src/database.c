@@ -266,6 +266,37 @@ static int run_migrations(void)
           "  FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,"
           "  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE"
           ");"
+        },
+        { 14,
+          "ALTER TABLE users ADD COLUMN email TEXT;"
+        },
+        { 15,
+          "CREATE TABLE IF NOT EXISTS anonymous_students ("
+          " phone TEXT PRIMARY KEY, class_id INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+          " FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE SET NULL"
+          ");"
+        },
+        { 16,
+          "ALTER TABLE anonymous_students ADD COLUMN pending_question TEXT;"
+        },
+        { 17,
+          "CREATE TABLE IF NOT EXISTS pending_notices ("
+          " phone TEXT PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL,"
+          " updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+          ");"
+        },
+        { 18,
+          "ALTER TABLE students ADD COLUMN grade TEXT NOT NULL DEFAULT '';"
+        },
+        { 19,
+          "CREATE TABLE IF NOT EXISTS whatsapp_inbound_events ("
+          " event_id TEXT PRIMARY KEY, sender_phone TEXT NOT NULL,"
+          " status TEXT NOT NULL DEFAULT 'RECEIVED' CHECK(status IN ('RECEIVED','PROCESSED','DELIVERY_FAILED')) ,"
+          " received_at TEXT NOT NULL DEFAULT (datetime('now'))"
+          ");"
+        },
+        { 20,
+          "ALTER TABLE whatsapp_inbound_events ADD COLUMN reply TEXT NOT NULL DEFAULT '';"
         }
     };
 

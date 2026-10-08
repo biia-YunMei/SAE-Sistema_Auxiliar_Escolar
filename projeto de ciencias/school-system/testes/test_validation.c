@@ -54,7 +54,7 @@ static void test_sanitize(void)
     char buf[64];
     size_t n = validation_sanitize_text(buf, sizeof buf, "Olá\x01mundo");
     CHECK(n == 10); /* espaços substituem controles */
-    CHECK(strcmp(buf, "Ol mundo") == 0);
+    CHECK(strcmp(buf, "Olá mundo") == 0);
 }
 
 static void test_length(void)

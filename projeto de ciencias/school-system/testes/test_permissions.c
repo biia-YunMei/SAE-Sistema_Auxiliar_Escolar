@@ -46,8 +46,7 @@ int main(void)
     User prof;
     CHECK(users_create("Prof", "+5511988887777", USER_TYPE_PROF, NULL, &prof)
           == SUCCESS);
-    CHECK(db_exec("INSERT INTO teachers(user_id) VALUES(2);") == SUCCESS);
-    /* Após o INSERT, teacher_id = (id) do row; simplificamos usando SELECT. */
+    /* O perfil de professor é criado junto com o usuário. */
     int64_t teacher_id = 0;
     {
         sqlite3_stmt *st = NULL;

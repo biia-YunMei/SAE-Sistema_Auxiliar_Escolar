@@ -40,6 +40,7 @@ LDFLAGS     := $(SQLITE_LIBS) $(CURL_LIBS) $(CRYPTO_LIBS) $(MHD_LIBS)
 # oficial do WhatsApp. Sem libcurl, o SAE ainda compila em modo local.
 ifneq ($(strip $(CURL_LIBS)),)
 CFLAGS      += -DWHATSAPP_USE_CURL
+CFLAGS      += -DAI_USE_REMOTE
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -59,7 +60,7 @@ SRC := $(wildcard src/*.c) $(wildcard src/http/*.c) \
 # Artefatos nunca ficam junto do código-fonte. Por padrão a pasta é irmã do
 # projeto e, portanto, não entra no repositório Git. É possível substituí-la:
 #   make ARTIFACT_DIR=/caminho/para/meus-artefatos
-ARTIFACT_DIR ?= $(abspath $(CURDIR)/../school-system-artifacts)
+ARTIFACT_DIR ?= $(HOME)/.cache/school-system-artifacts
 OBJ_DIR      := $(ARTIFACT_DIR)/obj
 TEST_DIR     := $(ARTIFACT_DIR)/tests
 BIN          := $(ARTIFACT_DIR)/$(BIN_NAME)
@@ -76,12 +77,12 @@ FORCE:
 $(OBJ): FORCE
 
 ifeq ($(OS),Windows_NT)
-all: $(BIN)
+all: $(BIN) install tests
 
 install: $(BIN)
 	@echo "Executável criado em $(BIN). Adicione $(ARTIFACT_DIR) ao PATH para usar sae."
 else
-all: $(BIN) install
+all: $(BIN) install tests
 
 install: $(BIN)
 	@mkdir -p $(BINDIR)
@@ -91,6 +92,7 @@ endif
 
 help:
 	@echo "make            Compila e atualiza o comando global sae"
+	@echo "                Também executa todos os testes automatizados"
 	@echo "make run        Compila e inicia o servidor"
 	@echo "make tests      Compila e executa os testes"
 	@echo "make debug      Compila com simbolos de depuracao"
@@ -133,12 +135,20 @@ $(TEST_DIR)/test_database:   testes/test_database.c   src/database.c src/logger.
 $(TEST_DIR)/test_auth:       testes/test_auth.c       src/database.c src/users.c src/auth.c src/validation.c src/logger.c
 $(TEST_DIR)/test_permissions: testes/test_permissions.c src/database.c src/users.c src/classes.c src/permissions.c src/logger.c src/validation.c
 $(TEST_DIR)/test_tasks:      testes/test_tasks.c      src/database.c src/users.c src/classes.c src/tasks.c src/logger.c src/validation.c
-$(TEST_DIR)/test_whatsapp:   testes/test_whatsapp.c   src/whatsapp.c src/validation.c src/logger.c
+$(TEST_DIR)/test_whatsapp:   testes/test_whatsapp.c   src/whatsapp.c src/validation.c src/logger.c \
+                       src/database.c src/users.c src/classes.c src/tasks.c src/ai.c
+$(TEST_DIR)/test_whatsapp: CFLAGS := $(filter-out -DWHATSAPP_USE_CURL -DAI_USE_REMOTE,$(CFLAGS))
+$(TEST_DIR)/test_ai:         CFLAGS := $(filter-out -DAI_USE_REMOTE,$(CFLAGS))
 $(TEST_DIR)/test_ai:         testes/test_ai.c         src/ai.c       src/validation.c src/logger.c
 $(TEST_DIR)/test_http:       testes/test_http.c       src/http/server.c src/http/router.c src/config.c \
                        src/http/controllers/whatsapp_controller.c \
                        src/whatsapp.c src/whatsapp_adapter.c src/auth.c src/database.c \
-                       src/users.c src/classes.c src/tasks.c src/logger.c src/validation.c
+                       src/users.c src/classes.c src/tasks.c src/ai.c src/logger.c src/validation.c
+$(TEST_DIR)/test_students:   testes/test_students.c src/http/controllers/students_controller.c \
+                       src/http/controllers/bootstrap_controller.c src/http/controllers/users_controller.c \
+                       src/http/controllers/teachers_controller.c src/http/controllers/classes_controller.c \
+                       src/http/controllers/notices_controller.c \
+                       src/auth.c src/database.c src/users.c src/classes.c src/validation.c src/logger.c
 
 $(TEST_DIR)/test_%: testes/test_%.c
 	@mkdir -p "$(@D)"

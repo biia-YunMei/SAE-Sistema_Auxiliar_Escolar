@@ -1,0 +1,52 @@
+[2026-10-07 13:27:07] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 13:27:07] [INFO] [test_logger.c:46] linha info
+[2026-10-07 13:27:07] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 13:27:07] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 13:32:14] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 13:32:14] [INFO] [test_logger.c:46] linha info
+[2026-10-07 13:32:14] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 13:32:14] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 13:33:46] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 13:33:46] [INFO] [test_logger.c:46] linha info
+[2026-10-07 13:33:46] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 13:33:46] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 13:35:11] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 13:35:11] [INFO] [test_logger.c:46] linha info
+[2026-10-07 13:35:11] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 13:35:11] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:15:05] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:15:05] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:15:05] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:15:05] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:16:06] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:16:06] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:16:06] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:16:06] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:22:36] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:22:36] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:22:36] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:22:36] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:26:41] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:26:41] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:26:41] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:26:41] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:28:14] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:28:14] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:28:14] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:28:14] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:29:12] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:29:12] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:29:12] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:29:12] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:43:57] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:43:57] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:43:57] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:43:57] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:50:42] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:50:42] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:50:42] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:50:42] [ERROR] [test_logger.c:48] linha error com 42
+[2026-10-07 15:51:33] [DEBUG] [test_logger.c:45] linha debug
+[2026-10-07 15:51:33] [INFO] [test_logger.c:46] linha info
+[2026-10-07 15:51:33] [WARNING] [test_logger.c:47] linha warn
+[2026-10-07 15:51:33] [ERROR] [test_logger.c:48] linha error com 42
