@@ -100,27 +100,30 @@ function formatDate(dateStr) {
   })
 }
 
-// ─── MÁSCARA WHATSAPP ───
+// ─── MÁSCARA WHATSAPP: 55 (xx) xxxxx-xxxx ───
+// Aceita qualquer entrada (inclusive colagem), extrai apenas dígitos,
+// garante o prefixo 55 (DDI Brasil) e formata.
 function aplicarMascaraWhats(valor) {
-  let numeros = valor.replace(/\D/g, '')
-  if (numeros.length > 11) numeros = numeros.slice(0, 11)
-  let resultado = ''
-  if (numeros.length > 0) {
-    resultado += '(' + numeros.slice(0, 2)
+  let digits = String(valor || '').replace(/\D/g, '')
+  if (!digits) return ''
+  // Se já digitou pelo menos 3 dígitos e não começou com 55, assume DDI 55
+  if (digits.length > 2 && !digits.startsWith('55')) {
+    digits = '55' + digits
   }
-  if (numeros.length >= 3) {
-    resultado += ') '
-    if (numeros.length <= 7) {
-      resultado += numeros.slice(2)
-    } else {
-      resultado += numeros.slice(2, 7) + '-' + numeros.slice(7)
-    }
-  }
-  return resultado
+  digits = digits.slice(0, 13) // 55 + DDD(2) + 9 dígitos
+  if (!digits.startsWith('55')) return digits
+
+  const ddd = digits.slice(2, 4)
+  const rest = digits.slice(4)
+
+  if (digits.length === 2) return '55'
+  if (digits.length <= 4) return `55 (${ddd}`
+  if (digits.length <= 9) return `55 (${ddd}) ${rest}`
+  return `55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`
 }
 
 // ─── LISTA DE ANOS/TURMAS ───
-// A ordem aqui é a ordem exibida no <select>.
+// Usada apenas para ORDENAR a exibição em formatarTurmas.
 const TURMA_ANOS = [
   'Maternal I',
   'Maternal II',
@@ -139,11 +142,8 @@ const TURMA_ANOS = [
   '2º EM',
   '3º EM',
 ]
-const TURMA_LETRAS = ['A', 'B']
 
 // ─── UTILITÁRIO: separa "Maternal I A" em { ano: "Maternal I", letra: "A" } ───
-// Regra: a letra é sempre o último caractere; o resto é o ano.
-// Isso evita o bug de split(' ')[0] que devolveria "Maternal" em vez de "Maternal I".
 function splitTurma(turma) {
   if (!turma) return { ano: '', letra: '' }
   const idx = turma.lastIndexOf(' ')
@@ -151,50 +151,48 @@ function splitTurma(turma) {
   return { ano: turma.slice(0, idx), letra: turma.slice(idx + 1) }
 }
 
-// ─── SELETOR DE TURMA (select de anos + checkboxes A/B) ───
-function gerarSelectorTurmas(
-  containerId,
-  anoSelecionado = '',
-  letrasSelecionadas = [],
-) {
+// ─── CAMPO DE TURMA (input de texto livre) ───
+// Substitui o antigo select + checkboxes. O usuário digita a(s) turma(s)
+// separadas por vírgula — ex.: "9º A, 9º B" ou "Maternal I A".
+function gerarSelectorTurmas(containerId, turmasSelecionadas = []) {
   const container = document.getElementById(containerId)
   if (!container) return
 
-  let html = `<div class="turma-selector">
-    <div class="form-group">
-      <label for="anoSelect_${containerId}">Ano/Turma:</label>
-      <select class="form-select" id="anoSelect_${containerId}">
-        <option value="">Selecione</option>`
-  TURMA_ANOS.forEach((ano) => {
-    const selected = ano === anoSelecionado ? 'selected' : ''
-    html += `<option value="${ano}" ${selected}>${ano}</option>`
-  })
-  html += `</select></div><div class="form-group">
-      <label>Letra(s):</label>`
-  TURMA_LETRAS.forEach((letra) => {
-    const checked = letrasSelecionadas.includes(letra) ? 'checked' : ''
-    html += `<div class="form-check form-check-inline">
-      <input class="form-check-input" type="checkbox" id="letra_${containerId}_${letra}" value="${letra}" ${checked}>
-      <label class="form-check-label" for="letra_${containerId}_${letra}">${letra}</label>
-    </div>`
-  })
-  html += `</div></div>`
-  container.innerHTML = html
+  const turmas = Array.isArray(turmasSelecionadas)
+    ? turmasSelecionadas
+    : turmasSelecionadas
+      ? [turmasSelecionadas]
+      : []
+
+  const value = turmas.join(', ')
+  const escaped = value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  container.innerHTML = `
+    <input
+      type="text"
+      class="form-control turma-input"
+      placeholder="Ex: 9º A, 9º B"
+      value="${escaped}"
+      autocomplete="off"
+    />
+    <small class="text-muted d-block mt-1">Separe múltiplas turmas por vírgula.</small>
+  `
 }
 
-// Obtém as turmas selecionadas a partir do seletor
+// Lê o valor do campo de turma e devolve array.
 function getTurmasSelecionadas(containerId) {
   const container = document.getElementById(containerId)
   if (!container) return []
-  const select = container.querySelector('select')
-  const ano = select ? select.value : ''
-  if (!ano) return []
-  const checkboxes = container.querySelectorAll(
-    'input[type="checkbox"]:checked',
-  )
-  const letras = Array.from(checkboxes).map((el) => el.value)
-  if (letras.length === 0) return []
-  return letras.map((letra) => `${ano} ${letra}`)
+  const input = container.querySelector('.turma-input')
+  if (!input) return []
+  return input.value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
 }
 
 // Formata a exibição das turmas (ex: ["9º A", "9º B"] -> "9º A e B")
@@ -207,7 +205,6 @@ function formatarTurmas(turmasArray) {
     if (letra) grupos[ano].push(letra)
   })
 
-  // Ordena pelos anos na ordem canônica; anos desconhecidos vão pro fim
   const anosOrdenados = Object.keys(grupos).sort((a, b) => {
     const ia = TURMA_ANOS.indexOf(a)
     const ib = TURMA_ANOS.indexOf(b)
@@ -248,6 +245,6 @@ function contarTurmasUnicasPorAno(lista) {
 }
 
 // ─── INICIALIZAÇÃO ───
-function initTurmaSelector(containerId, ano = '', letras = []) {
-  gerarSelectorTurmas(containerId, ano, letras)
+function initTurmaSelector(containerId, turmas = []) {
+  gerarSelectorTurmas(containerId, turmas)
 }
