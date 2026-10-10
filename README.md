@@ -9,7 +9,7 @@
 ![API](https://img.shields.io/badge/API-HTTP%2FJSON-0B7285)
 ![Status](https://img.shields.io/badge/status-em%20desenvolvimento-F59F00)
 
-[Começar](#começar) · [Recursos](#recursos) · [Comandos](#comandos-principais) · [WhatsApp](#whatsapp) · [Documentação](#documentação)
+[Começar](#começar) · [Recursos](#recursos) · [Comandos](#comandos-principais) · [WhatsApp](#whatsapp-pela-api-escolar) · [Documentação](#documentação)
 
 </div>
 
@@ -19,7 +19,7 @@
 
 O SAE é um sistema para apoiar a comunicação entre coordenação, professores e alunos. O back-end é escrito em C11, expõe uma API HTTP/JSON e guarda os dados em SQLite.
 
-A coordenação administra usuários, turmas e comunicados. Professores podem cadastrar e acompanhar tarefas. Alunos recebem informações da turma e podem consultá-las pelo WhatsApp quando a integração estiver configurada.
+A coordenação administra usuários, turmas e comunicados. Professores podem cadastrar e acompanhar tarefas. A IA pode usar Gemini 3.8 Flash com chave armazenada somente no `.env` local do back-end. Para a feira, a integração de mensagens usa a API escolar já fornecida; não é necessário criar aplicativo ou webhook na Meta.
 
 ## Recursos
 
@@ -30,7 +30,7 @@ A coordenação administra usuários, turmas e comunicados. Professores podem ca
 | Turmas | Criação de turmas e vínculo de professores e alunos. |
 | Tarefas | Criação e listagem por turma; edição e exclusão pela API. |
 | Comunicados | API para criar e consultar avisos. |
-| WhatsApp | Webhook, envio individual, envio para turma e fluxo de tarefas por mensagem. |
+| WhatsApp | O cliente C consulta a inbox com cursor persistente, oculta mensagens sem moderação `ok` e responde vinculando a resposta ao ID da mensagem. |
 | Segurança | Permissões por perfil, SQL parametrizado, validação de entrada e limite de tentativas de login. |
 | Portabilidade | Build para MSYS2/Windows, Ubuntu e derivados, NixOS e outras distribuições Linux. |
 
@@ -141,18 +141,80 @@ sae tarefa criar -c 1 -u 1 -m "Matemática" -n "Exercícios da página 20" -v 20
 
 > `ID_USUARIO_PROF` é o ID mostrado em `sae usuario listar`. Já `ID_PROF`, na criação de tarefa, é o ID interno do professor. Consulte a API ou o banco caso seja necessário identificá-lo.
 
-## WhatsApp
+## WhatsApp pela API escolar
 
-Com a integração configurada, a coordenação pode enviar uma mensagem para uma pessoa ou para todos os alunos de uma turma:
+Para a feira, o SAE deve consumir a API já hospedada em `https://api.cidades.io`. O programa consulta mensagens quando necessário; não precisa manter servidor público ou webhook, nem configurar credenciais da Meta.
+
+### Validar acesso antes de programar
+
+Use a chave `X-Escola-Key` que foi fornecida separadamente. Não a coloque neste README, no front-end, no Git ou em mensagens de suporte. O `.gitignore` da raiz já exclui arquivos `.env`.
+
+No terminal, leia a chave sem exibi-la nem gravá-la no histórico e consulte o endpoint de identificação:
 
 ```bash
-sae whatsapp enviar -p "+5566999999999" -m "Reunião amanhã às 14h."
-sae whatsapp turma -c 1 -m "A prova de Ciências será na sexta-feira."
+read -rsp "X-Escola-Key: " ESCOLA_KEY; echo
+curl -sS -H "X-Escola-Key: $ESCOLA_KEY" \
+  https://api.cidades.io/api/escola/sandbox/whoami
 ```
 
-Para ativar envio real pelo WhatsApp Business Cloud, copie `.env.example` para `.env` dentro de `projeto de ciencias/school-system` e informe as credenciais da Meta. Depois, execute `make` novamente e deixe `sae servidor` em execução.
+Se `whoami` responder com erro `chave_invalida`, pare e peça uma nova chave ao responsável. Não tente repetidamente. Depois, do celular que será usado no teste, envie o código de convite fornecido separadamente para `+55 66 99669-5016` e mande `oi`. Consulte a caixa de entrada:
 
-Mais detalhes: [Integração com WhatsApp Business Cloud](docs/WHATSAPP.md).
+```bash
+curl -sS -H "X-Escola-Key: $ESCOLA_KEY" \
+  "https://api.cidades.io/api/escola/sandbox/inbox?limit=5"
+```
+
+Para usar o cliente C integrado ao executável, copie `.env.example` para `.env` dentro de `projeto de ciencias/school-system`, preencha `ESCOLA_API_KEY` localmente e execute:
+
+```bash
+sae escola whoami
+sae escola inbox -l 5
+sae escola reply -i m_182 -m "Anotei sua mensagem."
+sae escola ref
+```
+
+O cliente grava o cursor em `data/escola_api.cursor` por padrão. Para mudar o local, defina `ESCOLA_CURSOR_PATH`. O primeiro `inbox` sem cursor consulta as mensagens iniciais ainda disponíveis; chamadas seguintes usam o cursor salvo.
+
+### Contrato da API
+
+As rotas documentadas para este projeto são:
+
+| Método e rota | Uso |
+| --- | --- |
+| `GET /api/escola/sandbox/whoami` | Confirma a chave e informa o modo de recebimento e o tamanho da allowlist. |
+| `GET /api/escola/sandbox/inbox?limit=5` | Busca mensagens disponíveis. |
+| `GET /api/escola/sandbox/inbox?since=CURSOR` | Busca mensagens seguintes sem consumir nem apagar as anteriores. |
+| `POST /api/escola/sandbox/reply` | Responde citando o ID da mensagem com `in_reply_to`. |
+| `/api/escola/sandbox/ref` | Referência da API. |
+
+Exemplo de resposta a uma mensagem recebida:
+
+```bash
+curl -X POST \
+  -H "X-Escola-Key: $ESCOLA_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"in_reply_to":"m_182","text":"Anotei sua mensagem."}' \
+  https://api.cidades.io/api/escola/sandbox/reply
+```
+
+Quando terminar os testes no terminal, apague a chave da variável da sessão:
+
+```bash
+unset ESCOLA_KEY
+```
+
+O campo `in_reply_to` deve conter o `id` retornado pela inbox. Não há rota para enviar mensagem a um telefone arbitrário. A resposta é enviada exatamente como escrita; revise qualquer texto gerado por IA antes de publicá-lo.
+
+### Recebimento, privacidade e cursor
+
+- Guarde `proximo_cursor` em arquivo persistente e envie-o como `since` na próxima consulta. Repetir um cursor devolve as mesmas mensagens.
+- Use `from_ref` como identificador pseudônimo; a API não fornece o telefone do remetente.
+- Áudios chegam transcritos no campo `text`. Imagens chegam descritas em dados estruturados, não como arquivo bruto.
+- Só exiba mensagens com `moderacao: "ok"`. Trate `bloqueada` e `indisponivel` como conteúdo que não deve ser exibido.
+- Respeite `PARAR`, `SAIR` e `VOLTAR`, os limites de chamadas e `Retry-After`. Não faça tentativas em laço apertado.
+- Em erros, programe pelo campo estável `erro`; `mensagem` é texto para humanos. `fora_da_janela_24h` exige que a pessoa mande uma nova mensagem.
+
+As rotas antigas de WhatsApp Business Cloud, tokens da Meta e webhook não fazem parte deste fluxo de feira. Não use `WHATSAPP_API_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET` ou `WHATSAPP_VERIFY_TOKEN` para integrar a API escolar.
 
 ## Desenvolvimento e qualidade
 
@@ -169,12 +231,13 @@ make clean      # Remove arquivos gerados
 - [Arquitetura do back-end](docs/ARQUITETURA.md)
 - [Referência da API HTTP](docs/API.md)
 - [Padrões de código e contribuição](docs/CONTRIBUINDO.md)
-- [Integração com WhatsApp Business Cloud](docs/WHATSAPP.md)
+- Referência atualizada da API: `GET /api/escola/sandbox/ref` (base `https://api.cidades.io`).
 - [Documentação detalhada do back-end](projeto%20de%20ciencias/school-system/README.md)
 
 ## Próximos passos
 
-- [ ] Confirmar tarefas e comunicados diretamente pelo WhatsApp.
+- [x] Integrar no back-end C as rotas `whoami`, `inbox`, `reply` e `ref`, com cursor persistente e filtro de moderação.
+- [ ] Validar os comandos do cliente C com a chave local e testar uma resposta no celular autorizado.
 - [ ] Processar áudio e imagem para apoiar o atendimento aos alunos.
 - [ ] Usar hash de senha com Argon2 ou bcrypt antes de produção.
 - [ ] Persistir sessões em banco de dados ou Redis.
