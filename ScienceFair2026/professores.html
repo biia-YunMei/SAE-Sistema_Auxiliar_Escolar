@@ -71,6 +71,19 @@
             Tarefas
           </button>
         </li>
+
+        <li class="nav-item">
+          <button
+            class="nav-link"
+            id="tab-mensagens"
+            data-bs-toggle="tab"
+            data-bs-target="#page-mensagens"
+            type="button"
+            role="tab"
+          >
+            Histórico de mensagens enviadas
+          </button>
+        </li>
       </ul>
 
       <div class="tab-content espacamento-cards" id="mainTabsContent">
@@ -156,10 +169,7 @@
                       <label class="form-label"
                         >Turmas <span class="text-danger">*</span></label
                       >
-                      <div id="turmasTarefa" class="turma-selector"></div>
-                      <small class="text-muted"
-                        >Selecione o ano e marque A e/ou B.</small
-                      >
+                      <div id="turmasTarefa"></div>
                     </div>
                     <div class="mb-3">
                       <label class="form-label"
@@ -251,6 +261,42 @@
             </div>
           </div>
         </div>
+
+        <!-- HISTÓRICO DE MENSAGENS -->
+        <div class="tab-pane fade" id="page-mensagens" role="tabpanel">
+          <div class="card">
+            <div
+              class="card-header d-flex justify-content-between align-items-center flex-wrap"
+            >
+              <span>Histórico de mensagens</span>
+              <span class="badge badge-teal" id="totalMensagensBadge">0</span>
+            </div>
+            <div class="card-body">
+              <input
+                type="text"
+                class="form-control mb-3"
+                id="buscaMensagens"
+                placeholder="Buscar por remetente ou mensagem..."
+              />
+              <div class="table-scroll">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th style="padding-left: 1.25rem">#</th>
+                      <th>Remetente</th>
+                      <th>Mensagem</th>
+                      <th>Hora do envio</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabelaMensagens"></tbody>
+                </table>
+              </div>
+              <div id="emptyMensagens" class="text-muted text-center py-4">
+                Nenhuma mensagem encontrada.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -316,7 +362,7 @@
                 <label class="form-label"
                   >Turmas <span class="text-danger">*</span></label
                 >
-                <div id="editTurmasTarefa" class="turma-selector"></div>
+                <div id="editTurmasTarefa"></div>
               </div>
               <div class="mb-3">
                 <label class="form-label"
@@ -514,18 +560,8 @@
           document.getElementById('editTarMateria').value = t.materia
           document.getElementById('editTarConteudo').value = t.conteudo
           document.getElementById('editTarDataEntrega').value = t.dataEntrega
-          if (t.turmas.length > 0) {
-            // Usa splitTurma para suportar "Maternal I A", "Pré II B", etc.
-            const primeira = t.turmas[0]
-            const { ano } = splitTurma(primeira)
-            const letras = t.turmas
-              .map((tur) => splitTurma(tur).letra)
-              .filter(Boolean)
-            const letrasUnicas = [...new Set(letras)]
-            gerarSelectorTurmas('editTurmasTarefa', ano, letrasUnicas)
-          } else {
-            gerarSelectorTurmas('editTurmasTarefa')
-          }
+          // Preenche o campo de turmas com as turmas atuais (texto separado por vírgula)
+          gerarSelectorTurmas('editTurmasTarefa', t.turmas)
           modalEditar.show()
         }
 
@@ -643,15 +679,20 @@
           try {
             classes = (await saeRequest('/classes')).items || []
             const result = await saeRequest('/tasks?mine=1')
-            window.saeProfessorUI.setTasks((result.items || []).map((task) => ({
-              id: task.id,
-              materia: task.subject,
-              turmas: [classes.find((item) => item.id === task.class_id)?.name || `Turma ${task.class_id}`],
-              conteudo: task.description || task.title,
-              dataEntrega: task.due_date,
-              dataLancamento: (task.created_at || '').slice(0, 10),
-              classId: task.class_id,
-            })))
+            window.saeProfessorUI.setTasks(
+              (result.items || []).map((task) => ({
+                id: task.id,
+                materia: task.subject,
+                turmas: [
+                  classes.find((item) => item.id === task.class_id)?.name ||
+                    `Turma ${task.class_id}`,
+                ],
+                conteudo: task.description || task.title,
+                dataEntrega: task.due_date,
+                dataLancamento: (task.created_at || '').slice(0, 10),
+                classId: task.class_id,
+              })),
+            )
           } catch (error) {
             showToast(error.message, 'danger')
           }
@@ -666,21 +707,30 @@
             const conteudo = document.getElementById('tarConteudo').value.trim()
             const data = document.getElementById('tarDataEntrega').value
             const nomes = getTurmasSelecionadas('turmasTarefa')
-            const selected = nomes.map((name) => classes.find((item) => item.name === name) || { name })
+            const selected = nomes.map(
+              (name) => classes.find((item) => item.name === name) || { name },
+            )
             if (!materia || !conteudo || !data || !selected.length)
               return showToast(
                 'Selecione ao menos uma turma e preencha os campos.',
                 'warning',
               )
             const resumo = `Matéria: ${materia}\nTurmas: ${selected.map((item) => item.name).join(', ')}\nConteúdo: ${conteudo}\nEntrega: ${formatDate(data)}`
-            if (!window.confirm(`Confirme os dados da tarefa antes de publicar:\n\n${resumo}`)) return
+            if (
+              !window.confirm(
+                `Confirme os dados da tarefa antes de publicar:\n\n${resumo}`,
+              )
+            )
+              return
             try {
               await Promise.all(
                 selected.map((item) =>
                   saeRequest('/tasks', {
                     method: 'POST',
                     body: JSON.stringify({
-                      ...(item.id ? { class_id: item.id } : { class_name: item.name }),
+                      ...(item.id
+                        ? { class_id: item.id }
+                        : { class_name: item.name }),
                       subject: materia,
                       title: conteudo.slice(0, 120),
                       description: conteudo,
@@ -703,6 +753,119 @@
         window.addEventListener('load', () => {
           setTimeout(loadTasks, 0)
         })
+      })()
+    </script>
+    <script>
+      ;(function () {
+        'use strict'
+        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
+
+        const table = document.getElementById('tabelaMensagens')
+        const empty = document.getElementById('emptyMensagens')
+        const total = document.getElementById('totalMensagensBadge')
+        const search = document.getElementById('buscaMensagens')
+        if (!table) return
+
+        let mensagens = []
+
+        function escapeHtml(v) {
+          return String(v ?? '').replace(
+            /[&<>"']/g,
+            (ch) =>
+              ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+              })[ch],
+          )
+        }
+
+        function formatarHora(iso) {
+          if (!iso) return '—'
+          const d = new Date(iso)
+          if (isNaN(d.getTime())) return String(iso)
+          return d.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        }
+
+        // Tenta mapear o objeto vindo da API para { remetente, mensagem, hora }
+        // independente do nome dos campos.
+        function normalizar(item) {
+          return {
+            remetente:
+              item.sender ||
+              item.remetente ||
+              item.from ||
+              item.sender_id ||
+              item.contact ||
+              '—',
+            mensagem:
+              item.content ||
+              item.message ||
+              item.text ||
+              item.body ||
+              item.mensagem ||
+              '',
+            hora:
+              item.timestamp ||
+              item.created_at ||
+              item.sent_at ||
+              item.time ||
+              item.date ||
+              '',
+          }
+        }
+
+        function render() {
+          const term = (search.value || '').toLowerCase().trim()
+          const filtradas = mensagens.filter(
+            (m) =>
+              String(m.remetente).toLowerCase().includes(term) ||
+              String(m.mensagem).toLowerCase().includes(term),
+          )
+          table.innerHTML = filtradas
+            .map(
+              (m, i) => `
+            <tr>
+              <td style="padding-left:1.25rem">${i + 1}</td>
+              <td>${escapeHtml(m.remetente)}</td>
+              <td>${escapeHtml(m.mensagem)}</td>
+              <td class="text-muted small">${escapeHtml(formatarHora(m.hora))}</td>
+            </tr>
+          `,
+            )
+            .join('')
+          empty.style.display = filtradas.length ? 'none' : 'block'
+          total.textContent = mensagens.length
+        }
+
+        async function loadMensagens() {
+          try {
+            const data = await saeRequest('/messages')
+            const items = data.items || data.messages || data.data || []
+            mensagens = items.map(normalizar)
+            render()
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        }
+
+        if (search) search.addEventListener('input', render)
+
+        // Carrega ao abrir a aba (evita request desnecessário no load)
+        const tabBtn = document.getElementById('tab-mensagens')
+        if (tabBtn) {
+          tabBtn.addEventListener('shown.bs.tab', () => {
+            if (!mensagens.length) loadMensagens()
+          })
+        }
       })()
     </script>
   </body>
