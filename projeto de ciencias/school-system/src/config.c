@@ -95,7 +95,10 @@ int config_load(AppConfig *out)
     load_env_file(".env");
     load_env_file("/etc/school-backend.env");
 
-    copy_str(out->server_host, sizeof out->server_host, getenv("SERVER_HOST"), "0.0.0.0");
+    /* O backend HTTP não tem TLS. Mantém o socket apenas em loopback; o
+     * navegador local e túneis reversos continuam funcionando sem expor a
+     * porta diretamente na rede, mesmo que uma configuração antiga peça isso. */
+    copy_str(out->server_host, sizeof out->server_host, NULL, "127.0.0.1");
     out->server_port = parse_int_env("SERVER_PORT", 8080);
 
     copy_str(out->database_path, sizeof out->database_path, getenv("DATABASE_PATH"), "data/school.db");
@@ -109,15 +112,24 @@ int config_load(AppConfig *out)
     copy_str(out->whatsapp_phone_id,  sizeof out->whatsapp_phone_id,  getenv("WHATSAPP_PHONE_NUMBER_ID"), "");
     copy_str(out->whatsapp_verify_token, sizeof out->whatsapp_verify_token,
              getenv("WHATSAPP_VERIFY_TOKEN"), "");
-    copy_str(out->whatsapp_app_secret, sizeof out->whatsapp_app_secret,
-             getenv("WHATSAPP_APP_SECRET"), "");
+    const char *webhook_secret = getenv("WHATSAPP_WEBHOOK_SECRET");
+    if (!webhook_secret || !*webhook_secret)
+        webhook_secret = getenv("WHATSAPP_APP_SECRET"); /* compatibilidade antiga */
+    copy_str(out->whatsapp_webhook_secret, sizeof out->whatsapp_webhook_secret,
+             webhook_secret, "");
 
-    copy_str(out->ai_api_url, sizeof out->ai_api_url, getenv("AI_API_URL"), "https://api.anthropic.com/v1/messages");
+    copy_str(out->ai_provider, sizeof out->ai_provider, getenv("AI_PROVIDER"), "gemini");
+    copy_str(out->ai_api_url, sizeof out->ai_api_url, getenv("AI_API_URL"), "https://generativelanguage.googleapis.com/v1beta/models");
     copy_str(out->ai_api_key, sizeof out->ai_api_key, getenv("AI_API_KEY"), "");
-    copy_str(out->ai_model,  sizeof out->ai_model,  getenv("AI_MODEL"),  "");
+    copy_str(out->ai_model,  sizeof out->ai_model,  getenv("AI_MODEL"),  "gemini-3.8-flash");
 
     copy_str(out->transcription_api_url, sizeof out->transcription_api_url, getenv("TRANSCRIPTION_API_URL"), "");
     copy_str(out->transcription_api_key, sizeof out->transcription_api_key, getenv("TRANSCRIPTION_API_KEY"), "");
+
+    copy_str(out->escola_api_key, sizeof out->escola_api_key,
+             getenv("ESCOLA_API_KEY"), "");
+    copy_str(out->escola_cursor_path, sizeof out->escola_cursor_path,
+             getenv("ESCOLA_CURSOR_PATH"), "data/escola_api.cursor");
 
     out->max_message_size   = parse_int_env("MAX_MESSAGE_SIZE",   4096);
     out->max_request_size   = parse_int_env("MAX_REQUEST_SIZE",   1048576);

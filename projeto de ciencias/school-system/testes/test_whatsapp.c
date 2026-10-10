@@ -44,16 +44,28 @@ int main(void)
     char reply[256];
     CHECK(whatsapp_receive_message("+551199999", "olá",
                                    reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "qual turma") != NULL);
+    CHECK(strstr(reply, "nao esta cadastrado como aluno") != NULL);
 
     CHECK(whatsapp_receive_message("12345",      "olá", reply, sizeof reply)
           == ERROR_INVALID_PHONE);
 
     Class class_9a;
     CHECK(classes_create("9A", "9º ano", SHIFT_MORNING, &class_9a) == SUCCESS);
+    sqlite3_stmt *statement = NULL;
     User teacher;
-    CHECK(users_create("Professora", "+5511999990001", USER_TYPE_PROF, NULL, &teacher) == SUCCESS);
-    /* Na Fase 0 o professor não precisa ter turma pré-vinculada. */
+    CHECK(users_create("Professora", "+5511999990001", USER_TYPE_PROF, "senhaProf", &teacher) == SUCCESS);
+    int64_t teacher_id = 0;
+    CHECK(db_prepare("SELECT id FROM teachers WHERE user_id=?;", &statement) == SUCCESS);
+    db_bind_int64(statement, 1, teacher.id);
+    CHECK(sqlite3_step(statement) == SQLITE_ROW);
+    teacher_id = sqlite3_column_int64(statement, 0);
+    sqlite3_finalize(statement);
+    CHECK(classes_link_teacher(teacher_id, class_9a.id) == SUCCESS);
+    Class class_9b;
+    CHECK(classes_create("9B", "9º ano", SHIFT_MORNING, &class_9b) == SUCCESS);
+    CHECK(whatsapp_receive_message(teacher.phone,
+          "9B matematica pagina 2 entrega sexta", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "nao esta autorizado") != NULL);
     CHECK(whatsapp_receive_message(teacher.phone,
           "9A matematica pagina 32 entrega sexta", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "Resumo:") != NULL);
@@ -71,7 +83,6 @@ int main(void)
     const char *student = "+5511999990002";
     User student_user;
     CHECK(users_create("Aluno", student, USER_TYPE_STUD, NULL, &student_user) == SUCCESS);
-    sqlite3_stmt *statement = NULL;
     CHECK(db_prepare("UPDATE students SET class_id=?,grade=? WHERE user_id=?;", &statement) == SUCCESS);
     db_bind_int64(statement, 1, class_9a.id);
     db_bind_text(statement, 2, "9º ano");
@@ -79,13 +90,13 @@ int main(void)
     CHECK(sqlite3_step(statement) == SQLITE_DONE);
     sqlite3_finalize(statement);
     CHECK(whatsapp_receive_message(student, "Tem tarefa?", reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "qual turma") != NULL);
-    CHECK(whatsapp_receive_message(student, "9A", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "Tarefas de 9A") != NULL);
+    CHECK(whatsapp_receive_message(student, "9A", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Tarefas de 9A") == NULL);
     CHECK(whatsapp_receive_message(student, "2B tem tarefa?", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "Tarefas de 9A") != NULL);
     User coordinator;
-    CHECK(users_create("Coordenação", "+5511999990004", USER_TYPE_COORD, "senha", &coordinator) == SUCCESS);
+    CHECK(users_create("Coordenação", "+5511999990004", USER_TYPE_COORD, "senhaSegura", &coordinator) == SUCCESS);
     CHECK(whatsapp_receive_message(coordinator.phone,
           "COMUNICADO: Prova de Portugues dia 10 de outubro", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "qual turma") != NULL);
@@ -95,9 +106,9 @@ int main(void)
     CHECK(strstr(reply, "Prova de Portugues") != NULL);
     CHECK(whatsapp_receive_message("+5511999990003", "8B matematica pagina 2 entrega sexta",
           reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "nao podem cadastrar tarefas") != NULL);
+    CHECK(strstr(reply, "nao esta cadastrado como aluno") != NULL);
     CHECK(whatsapp_receive_message("+5511999990005", "2B tem tarefa?", reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "Tarefas de 2B") != NULL);
+    CHECK(strstr(reply, "nao esta cadastrado como aluno") != NULL);
 
     whatsapp_shutdown();
     database_shutdown();

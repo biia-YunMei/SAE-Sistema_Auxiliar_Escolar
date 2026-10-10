@@ -29,8 +29,8 @@ int main(void)
 
     /* Setup: 2 professores, 1 turma */
     User p1, p2;
-    users_create("Prof 1", "+5511911110001", USER_TYPE_PROF, NULL, &p1);
-    users_create("Prof 2", "+5511911110002", USER_TYPE_PROF, NULL, &p2);
+    users_create("Prof 1", "+5511911110001", USER_TYPE_PROF, "senhaProf1", &p1);
+    users_create("Prof 2", "+5511911110002", USER_TYPE_PROF, "senhaProf2", &p2);
     Class c;
     CHECK(classes_create("3A", "3o ano", SHIFT_AFTERNOON, &c) == SUCCESS);
 

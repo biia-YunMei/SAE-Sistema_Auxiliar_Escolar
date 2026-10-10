@@ -190,12 +190,19 @@ int classes_unlink_teacher(int64_t teacher_id, int64_t class_id)
 
 int classes_teacher_has_access(int64_t teacher_id, int64_t class_id)
 {
+    if (teacher_id <= 0 || class_id <= 0) return 0;
     sqlite3_stmt *st = NULL;
     int rc = db_prepare(
         "SELECT 1 FROM teacher_classes WHERE teacher_id=? AND class_id=? LIMIT 1;", &st);
-    if (rc != SUCCESS) return rc;
-    db_bind_int64(st, 1, (long long)teacher_id);
-    db_bind_int64(st, 2, (long long)class_id);
+    /* Esta função é um predicado de autorização. Em qualquer falha de banco,
+     * fecha o acesso em vez de propagar um código positivo interpretado como
+     * verdadeiro pelos chamadores. */
+    if (rc != SUCCESS) return 0;
+    if (db_bind_int64(st, 1, (long long)teacher_id) != SUCCESS ||
+        db_bind_int64(st, 2, (long long)class_id) != SUCCESS) {
+        sqlite3_finalize(st);
+        return 0;
+    }
     rc = sqlite3_step(st);
     sqlite3_finalize(st);
     return rc == SQLITE_ROW ? 1 : 0;

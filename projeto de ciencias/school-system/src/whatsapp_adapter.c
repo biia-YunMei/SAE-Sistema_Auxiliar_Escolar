@@ -1,5 +1,5 @@
 /* whatsapp_adapter.c
- * Implementação concreta do envio via WhatsApp Business Cloud.
+ * Implementação concreta do envio via API externa de mensagens.
  *
  * Compilação condicional: se libcurl não estiver disponível, o arquivo
  * ainda compila mas `whatsapp_send_via_api` retorna ERROR_NOT_IMPLEMENTED.
@@ -101,7 +101,7 @@ int whatsapp_send_via_api(const char *phone, const char *text)
     int escape_rc = json_escape(escaped_text, sizeof escaped_text, text);
     if (escape_rc != SUCCESS) return escape_rc;
 
-    /* A Cloud API recebe o número em formato E.164 sem o sinal '+'. */
+    /* A compatible API recebe o número em formato E.164 sem o sinal '+'. */
     const char *recipient = phone[0] == '+' ? phone + 1 : phone;
     char body[24576];
     int n = snprintf(body, sizeof body,
@@ -147,7 +147,7 @@ int whatsapp_send_via_api(const char *phone, const char *text)
         log_error("whatsapp: HTTP %ld", http);
         return ERROR_WHATSAPP;
     }
-    log_info("whatsapp: enviado para %s (http %ld)", phone, http);
+    log_info("whatsapp: mensagem enviada (http %ld)", http);
     return SUCCESS;
 #endif
 }

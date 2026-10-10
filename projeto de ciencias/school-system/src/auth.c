@@ -76,6 +76,9 @@ static int guard_slot(const char *phone, long now)
 {
     int free_slot = -1;
     for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
+        if (g_guards[i].phone[0] && g_guards[i].locked_until <= now &&
+            now - g_guards[i].window_started > LOGIN_WINDOW_SECONDS)
+            memset(&g_guards[i], 0, sizeof g_guards[i]);
         if (g_guards[i].phone[0] == '\0' && free_slot < 0) free_slot = i;
         if (strcmp(g_guards[i].phone, phone) == 0) return i;
     }
@@ -136,18 +139,39 @@ int auth_login_phone(const char *phone, const char *password, AuthSession *out)
     sqlite3_stmt *statement = NULL;
     if (db_prepare("SELECT password_hash FROM users WHERE id=?;", &statement) != SUCCESS)
         return ERROR_DATABASE;
-    db_bind_int64(statement, 1, (long long)user.id);
+    if (db_bind_int64(statement, 1, (long long)user.id) != SUCCESS) {
+        sqlite3_finalize(statement);
+        return ERROR_DATABASE;
+    }
     int found = sqlite3_step(statement) == SQLITE_ROW;
     const unsigned char *hash = found ? sqlite3_column_text(statement, 0) : NULL;
-    /* Professor cadastrado é autenticado pelo WhatsApp, conforme regra do
-     * produto. Coordenadores continuam protegidos por senha. */
-    int valid = found && user.type == USER_TYPE_PROF;
-    if (found && user.type != USER_TYPE_PROF && hash && password && *password)
-        valid = users_verify_password(password, (const char *)hash) == SUCCESS;
+    /* O telefone identifica a conta; a senha comprova a posse da conta tanto
+     * para professores quanto para coordenação. Alunos não entram no site. */
+    char old_hash[128] = {0};
+    int legacy_hash = found && hash && strchr((const char *)hash, ':') != NULL &&
+        strlen((const char *)hash) < sizeof old_hash;
+    if (legacy_hash) snprintf(old_hash, sizeof old_hash, "%s", (const char *)hash);
+    int valid = found && hash && password && *password &&
+        users_verify_password(password, (const char *)hash) == SUCCESS;
     sqlite3_finalize(statement);
     if (!valid) {
         register_login_result(phone, 0);
         return ERROR_UNAUTHORIZED;
+    }
+
+    /* Migração transparente dos hashes SHA-256 antigos após autenticação
+     * válida. A conta continua protegida caso a atualização falhe. */
+    if (legacy_hash) {
+        char upgraded[128];
+        sqlite3_stmt *update = NULL;
+        if (users_hash_password(password, upgraded, sizeof upgraded) == SUCCESS &&
+            db_prepare("UPDATE users SET password_hash=? WHERE id=? AND password_hash=?;", &update) == SUCCESS) {
+            db_bind_text(update, 1, upgraded);
+            db_bind_int64(update, 2, (long long)user.id);
+            db_bind_text(update, 3, old_hash);
+            (void)sqlite3_step(update);
+            sqlite3_finalize(update);
+        }
     }
 
     if (out) {
@@ -221,7 +245,7 @@ int auth_session_resolve(const char *token, AuthSession *out)
         }
         User current;
         if (users_find_by_id(snapshot.user_id, &current) != SUCCESS ||
-            current.status != USER_STATUS_ACTIVE) {
+            current.status != USER_STATUS_ACTIVE || current.type != snapshot.type) {
             (void)auth_session_revoke(token);
             return ERROR_UNAUTHORIZED;
         }

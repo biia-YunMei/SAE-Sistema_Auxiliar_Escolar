@@ -18,9 +18,13 @@
 #include "controllers.h"
 #include "whatsapp.h"
 #include "cli.h"
+#include "escola_api.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
 #include <signal.h>
 #include <string.h>
 #if defined(_WIN32)
@@ -88,6 +92,10 @@ struct ServerRoutes { const Route *routes; size_t n; };
 
 int main(int argc, char **argv)
 {
+#if !defined(_WIN32)
+    /* Tokens, banco, WAL e logs recém-criados ficam privados ao usuário. */
+    (void)umask(0077);
+#endif
     int cli_status = cli_run(argc, argv);
     if (cli_status >= 0) return cli_status;
 
@@ -120,6 +128,9 @@ int main(int argc, char **argv)
         return ERROR_WHATSAPP;
     }
 
+    if (escola_api_worker_start((volatile int *)&g_should_exit) != SUCCESS)
+        log_warn("Não foi possível iniciar a tutoria automática da inbox escolar");
+
     struct ServerRoutes sr = {
         .routes = g_routes,
         .n      = sizeof g_routes / sizeof g_routes[0]
@@ -128,6 +139,8 @@ int main(int argc, char **argv)
     log_info("Rotas registradas: %zu", sr.n);
     rc = http_server_run(cfg.server_host, cfg.server_port, &sr,
                          (volatile int *)&g_should_exit);
+    g_should_exit = 1;
+    escola_api_worker_join();
     if (rc != SUCCESS) {
         log_error("Servidor HTTP encerrou com erro (%d)", rc);
         whatsapp_shutdown();

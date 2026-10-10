@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <stdatomic.h>
 
 #if defined(_WIN32)
   #include <winsock2.h>
@@ -34,6 +35,8 @@
 
 #define MAX_HEADER 16384
 #define MAX_BODY   (1024*1024)
+#define MAX_CLIENTS 64
+static atomic_uint active_clients;
 
 /* ---------- helpers de resposta ---------------------------------- */
 
@@ -69,6 +72,11 @@ static const char *friendly_error_message(const char *message)
         { "id too long", "A identificação informada é muito longa." },
         { "ids required", "Informe as identificações necessárias." },
         { "invalid credentials", "Telefone ou senha incorretos. Confira os dados e tente novamente." },
+        { "invalid password length", "A senha deve ter entre 8 e 127 caracteres." },
+        { "invalid setup key", "A chave temporária de configuração está incorreta." },
+        { "message id required", "A mensagem recebida não tem um identificador único." },
+        { "bootstrap is disabled; configure SAE_BOOTSTRAP_KEY", "Configure SAE_BOOTSTRAP_KEY no ambiente do servidor antes do primeiro cadastro." },
+        { "SAE_BOOTSTRAP_KEY must contain at least 32 characters", "A chave temporária deve ter pelo menos 32 caracteres." },
         { "invalid due_date", "A data de entrega não é válida. Use o formato AAAA-MM-DD." },
         { "invalid id", "A identificação informada não é válida." },
         { "invalid email", "Informe um endereço de e-mail válido." },
@@ -264,9 +272,10 @@ static void send_response(socket_t cfd, const HttpResponse *res)
         "Content-Type: %s\r\n"
         "Content-Length: %zu\r\n"
         "Connection: close\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
-        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Authorization, Content-Type\r\n"
+        "X-Content-Type-Options: nosniff\r\n"
+        "X-Frame-Options: DENY\r\n"
+        "Referrer-Policy: no-referrer\r\n"
+        "Cache-Control: no-store\r\n"
         "\r\n",
         res->status,
         res->status == 200 ? "OK" :
@@ -277,11 +286,22 @@ static void send_response(socket_t cfd, const HttpResponse *res)
         res->status == 403 ? "Forbidden" :
         res->status == 404 ? "Not Found" :
         res->status == 405 ? "Method Not Allowed" :
-        res->status == 429 ? "Too Many Requests" : "Error",
+        res->status == 429 ? "Too Many Requests" :
+        res->status == 501 ? "Not Implemented" : "Error",
         res->content_type ? res->content_type : "application/json",
         res->body_len);
-    (void)send(cfd, head, (size_t)n, 0);
-    if (res->body && res->body_len) (void)send(cfd, res->body, res->body_len, 0);
+    size_t sent = 0;
+    while (sent < (size_t)n) {
+        ssize_t part = send(cfd, head + sent, (size_t)n - sent, 0);
+        if (part <= 0) return;
+        sent += (size_t)part;
+    }
+    sent = 0;
+    while (res->body && sent < res->body_len) {
+        ssize_t part = send(cfd, res->body + sent, res->body_len - sent, 0);
+        if (part <= 0) return;
+        sent += (size_t)part;
+    }
 }
 
 /* ---------- dispatcher declarado externamente em router.c ------- */
@@ -317,6 +337,7 @@ static void *client_thread(void *arg)
     free(req.storage);
     close(c->cfd);
     free(c);
+    atomic_fetch_sub_explicit(&active_clients, 1, memory_order_release);
     return NULL;
 }
 
@@ -331,6 +352,7 @@ static DWORD WINAPI client_thread_win(LPVOID arg)
 int http_server_run(const char *host, int port, void *ctx,
                     volatile int *should_stop)
 {
+    if (!should_stop || port <= 0 || port > 65535) return ERROR_INVALID_INPUT;
 #if defined(_WIN32)
     WSADATA wsad; WSAStartup(MAKEWORD(2,2), &wsad);
 #else
@@ -350,7 +372,9 @@ int http_server_run(const char *host, int port, void *ctx,
     addr.sin_family = AF_INET;
     addr.sin_port   = htons((uint16_t)port);
     if (!host || !*host || strcmp(host, "0.0.0.0") == 0) addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    else inet_pton(AF_INET, host, &addr.sin_addr);
+    else if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
+        log_error("endereço SERVER_HOST inválido"); close(sfd); return ERROR_CONFIG;
+    }
 
     if (bind(sfd, (struct sockaddr *)&addr, sizeof addr) < 0) {
         log_error("bind: %s", strerror(errno)); close(sfd); return ERROR_NETWORK;
@@ -379,7 +403,18 @@ int http_server_run(const char *host, int port, void *ctx,
         socket_t cfd = accept(sfd, NULL, NULL);
         if (cfd < 0) break;
 #endif
+        unsigned int active = atomic_load_explicit(&active_clients, memory_order_relaxed);
+        do {
+            if (active >= MAX_CLIENTS) { close(cfd); cfd = (socket_t)-1; break; }
+        } while (!atomic_compare_exchange_weak_explicit(&active_clients, &active, active + 1,
+                    memory_order_acquire, memory_order_relaxed));
+        if (cfd == (socket_t)-1) continue;
+        /* Limita conexões lentas que manteriam uma thread presa indefinidamente. */
+        struct timeval io_timeout = { .tv_sec = 10, .tv_usec = 0 };
+        setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&io_timeout, sizeof io_timeout);
+        setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&io_timeout, sizeof io_timeout);
         ConnArg *c = (ConnArg *)malloc(sizeof *c);
+        if (!c) { close(cfd); continue; }
         c->cfd = cfd;
         c->server_ctx = ctx;
 #if defined(_WIN32)
@@ -387,11 +422,11 @@ int http_server_run(const char *host, int port, void *ctx,
         HANDLE th = CreateThread(NULL, 0,
             client_thread_win, c, 0, NULL);
         if (th) CloseHandle(th);
-        else { closesocket(cfd); free(c); }
+        else { closesocket(cfd); free(c); atomic_fetch_sub(&active_clients, 1); }
 #else
         pthread_t t;
         if (pthread_create(&t, NULL, client_thread, c) != 0) {
-            close(cfd); free(c);
+            close(cfd); free(c); atomic_fetch_sub(&active_clients, 1);
         } else {
             pthread_detach(t);
         }

@@ -3,6 +3,7 @@
 #include "users.h"
 #include "validation.h"
 #include "controllers.h"
+#include <stdlib.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -26,11 +27,24 @@ int ctrl_bootstrap_admin(const HttpRequest *req, HttpResponse *res)
 {
     if (strcmp(req->method, "POST") != 0)
         return http_respond_error(res, 405, "method not allowed");
-    char name[121] = {0}, phone[32] = {0}, password[128] = {0};
+    char name[121] = {0}, phone[32] = {0}, password[128] = {0}, key[128] = {0};
     if (!field(req->body, "name", name, sizeof name) ||
         !field(req->body, "phone", phone, sizeof phone) ||
-        !field(req->body, "password", password, sizeof password))
-        return http_respond_error(res, 400, "name, phone and password are required");
+        !field(req->body, "password", password, sizeof password) ||
+        !field(req->body, "bootstrap_key", key, sizeof key))
+        return http_respond_error(res, 400, "name, phone, password and setup key are required");
+    const char *expected = getenv("SAE_BOOTSTRAP_KEY");
+    if (!expected || !*expected)
+        return http_respond_error(res, 403, "bootstrap is disabled; configure SAE_BOOTSTRAP_KEY");
+    size_t expected_len = strlen(expected), supplied_len = strlen(key);
+    if (expected_len < 32)
+        return http_respond_error(res, 403, "SAE_BOOTSTRAP_KEY must contain at least 32 characters");
+    unsigned int key_diff = (unsigned int)(expected_len ^ supplied_len);
+    for (size_t i = 0; i < expected_len; ++i)
+        key_diff |= (unsigned char)expected[i] ^
+                    (i < supplied_len ? (unsigned char)key[i] : 0);
+    if (key_diff != 0)
+        return http_respond_error(res, 403, "invalid setup key");
     if (!validation_is_valid_phone(phone)) return http_respond_error(res, 400, "invalid phone");
     if (!validation_length_between(name, 1, 120) || !validation_length_between(password, 8, 127))
         return http_respond_error(res, 400, "invalid name or password length");

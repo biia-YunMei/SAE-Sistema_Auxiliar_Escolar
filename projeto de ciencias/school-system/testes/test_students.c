@@ -1,4 +1,5 @@
 /* Testes do cadastro administrativo de alunos, sem servidor de sockets. */
+#define _POSIX_C_SOURCE 200809L
 #include "auth.h"
 #include "classes.h"
 #include "database.h"
@@ -11,6 +12,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 static int passed, failed;
 #define CHECK(expr) do { \
@@ -56,11 +58,16 @@ int main(void)
     unlink(path); unlink("data/test_students.db-wal"); unlink("data/test_students.db-shm");
     logger_init("logs", LOG_ERROR);
     CHECK(database_init(path) == SUCCESS);
+    setenv("SAE_BOOTSTRAP_KEY", "test-setup-key-with-at-least-32-characters-long", 1);
 
     HttpRequest request = {0};
     HttpResponse response = {0};
     request.method = "POST";
-    request.body = "{\"name\":\"Coord\",\"phone\":\"+5511999000001\",\"password\":\"senhaSegura1!\"}";
+    request.body = "{\"name\":\"Coord\",\"phone\":\"+5511999000001\",\"password\":\"senhaSegura1!\",\"bootstrap_key\":\"incorreta\"}";
+    CHECK(ctrl_bootstrap_admin(&request, &response) == SUCCESS);
+    CHECK(response.status == 403);
+    memset(&response, 0, sizeof response);
+    request.body = "{\"name\":\"Coord\",\"phone\":\"+5511999000001\",\"password\":\"senhaSegura1!\",\"bootstrap_key\":\"test-setup-key-with-at-least-32-characters-long\"}";
     CHECK(ctrl_bootstrap_admin(&request, &response) == SUCCESS);
     CHECK(response.status == 201);
     User coordinator;
@@ -74,7 +81,7 @@ int main(void)
     CHECK(classes_create("8B", "9º ano", SHIFT_MORNING, &class_b) == SUCCESS);
 
     User professor;
-    CHECK(users_create("Professor", "+5511999000002", USER_TYPE_PROF, NULL, &professor) == SUCCESS);
+    CHECK(users_create("Professor", "+5511999000002", USER_TYPE_PROF, "senhaProf", &professor) == SUCCESS);
     char professor_token[80] = {0};
     CHECK(make_token(USER_TYPE_PROF, professor.id, professor_token) == SUCCESS);
     request.auth = professor_token;
@@ -91,7 +98,7 @@ int main(void)
     CHECK(response.status == 403);
 
     request.auth = token;
-    request.body = "{\"name\":\"Outro\",\"phone\":\"+5511999000099\",\"password\":\"senhaSegura2!\"}";
+    request.body = "{\"name\":\"Outro\",\"phone\":\"+5511999000099\",\"password\":\"senhaSegura2!\",\"bootstrap_key\":\"test-setup-key-with-at-least-32-characters-long\"}";
     memset(&response, 0, sizeof response);
     CHECK(ctrl_bootstrap_admin(&request, &response) == SUCCESS);
     CHECK(response.status == 409);

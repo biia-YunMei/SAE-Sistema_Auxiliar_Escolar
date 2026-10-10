@@ -39,12 +39,12 @@ int main(void)
 
     /* Criação de usuários com validação */
     User u;
-    CHECK(users_create("Coord A", "+5511999990001", USER_TYPE_COORD, "senha", &u)
+    CHECK(users_create("Coord A", "+5511999990001", USER_TYPE_COORD, "senhaSegura", &u)
           == SUCCESS);
     CHECK(u.id > 0);
     CHECK(u.type == USER_TYPE_COORD);
 
-    CHECK(users_create("Prof B",  "+5511999990002", USER_TYPE_PROF,  NULL, &u)
+    CHECK(users_create("Prof B",  "+5511999990002", USER_TYPE_PROF,  "senhaProf", &u)
           == SUCCESS);
     int64_t teacher_user_id = u.id;
     CHECK(users_create("Aluno C", "+5511999990003", USER_TYPE_STUD,  "senhaAluno", &u)
@@ -63,12 +63,13 @@ int main(void)
 
     /* Auth por telefone */
     AuthSession s;
-    CHECK(auth_login_phone("+5511999990001", "senha", &s) == SUCCESS);
+    CHECK(auth_login_phone("+5511999990001", "senhaSegura", &s) == SUCCESS);
     CHECK(s.user_id > 0);
     CHECK(s.type == USER_TYPE_COORD);
     CHECK(auth_login_phone("+5511999990001", "errada", &s) == ERROR_UNAUTHORIZED);
     CHECK(auth_login_phone("+5511000000000", NULL,    &s) == ERROR_UNAUTHORIZED);
-    CHECK(auth_login_phone("+5511999990002", NULL, &s) == SUCCESS);
+    CHECK(auth_login_phone("+5511999990002", NULL, &s) == ERROR_UNAUTHORIZED);
+    CHECK(auth_login_phone("+5511999990002", "senhaProf", &s) == SUCCESS);
     CHECK(s.type == USER_TYPE_PROF);
     CHECK(auth_login_phone("+5511999990003", "senhaAluno", &s) == ERROR_UNAUTHORIZED);
 

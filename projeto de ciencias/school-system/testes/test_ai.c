@@ -24,6 +24,10 @@ int main(void)
     CHECK(ai_minimal_json_extract(j, "foo", buf, sizeof buf));
     CHECK(strcmp(buf, "bar") == 0);
     CHECK(!ai_minimal_json_extract(j, "nope", buf, sizeof buf));
+    const char *gemini_response =
+        "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"resposta Gemini\"}]}}]}";
+    CHECK(ai_minimal_json_extract(gemini_response, "text", buf, sizeof buf));
+    CHECK(strcmp(buf, "resposta Gemini") == 0);
 
     /* Parse da mensagem do professor */
     TaskData t;
@@ -59,6 +63,11 @@ int main(void)
     rc = ai_answer_student_question("O que é tal coisa?", NULL, resp, sizeof resp);
     CHECK(rc == SUCCESS);
     CHECK(strstr(resp, "etapas") != NULL);
+
+    /* Mensagens curtas de saudação também podem receber resposta automática. */
+    rc = ai_answer_student_question("Oi", NULL, resp, sizeof resp);
+    CHECK(rc == SUCCESS);
+    CHECK(resp[0] != '\0');
 
     printf("\nAI: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;

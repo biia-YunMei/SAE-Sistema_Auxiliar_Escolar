@@ -61,7 +61,7 @@ static int make_dir(const char *path)
 #if defined(_WIN32)
     return _mkdir(path);
 #else
-    return mkdir(path, 0755);
+    return mkdir(path, 0700);
 #endif
 }
 
@@ -110,6 +110,9 @@ static void open_today_locked(void)
 
     g_log.fp = fopen(path, "a");
     if (g_log.fp) {
+#if !defined(_WIN32)
+        (void)chmod(path, 0600);
+#endif
         /* Line-buffered: cada log vai pro disco em uma linha. */
         setvbuf(g_log.fp, NULL, _IOLBF, 0);
         strncpy(g_log.current_date, datebuf, sizeof g_log.current_date);
@@ -126,6 +129,9 @@ int logger_init(const char *log_dir, LogLevel min_level)
         strncpy(g_log.dir, "logs", sizeof g_log.dir - 1);
     }
     ensure_dir(g_log.dir);
+#if !defined(_WIN32)
+    (void)chmod(g_log.dir, 0700);
+#endif
     g_log.min_level = min_level;
     open_today_locked();
     g_log.initialized = 1;

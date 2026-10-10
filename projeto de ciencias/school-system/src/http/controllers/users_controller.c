@@ -73,7 +73,9 @@ int ctrl_users_create(const HttpRequest *req, HttpResponse *res)
     if (!extract_str(req->body, "name",  name,  sizeof name))  return http_respond_error(res, 400, "name required");
     if (!extract_str(req->body, "phone", phone, sizeof phone)) return http_respond_error(res, 400, "phone required");
     if (!extract_str(req->body, "type",  type_s, sizeof type_s)) return http_respond_error(res, 400, "type required");
-    extract_str(req->body, "password", pass, sizeof pass);
+    if (!extract_str(req->body, "password", pass, sizeof pass) ||
+        !validation_length_between(pass, 8, 127))
+        return http_respond_error(res, 400, "invalid password length");
     if (!validation_is_valid_phone(phone)) return http_respond_error(res, 400, "invalid phone");
 
     UserType t = user_type_from(type_s);
@@ -82,7 +84,7 @@ int ctrl_users_create(const HttpRequest *req, HttpResponse *res)
         return http_respond_error(res, 400, "use student registration");
 
     User u;
-    rc = users_create(name, phone, t, pass[0] ? pass : NULL, &u);
+    rc = users_create(name, phone, t, pass, &u);
     if (rc == ERROR_ALREADY_EXISTS) return http_respond_error(res, 409, "phone already registered");
     if (rc != SUCCESS)              return http_respond_error(res, 400, "create failed");
 

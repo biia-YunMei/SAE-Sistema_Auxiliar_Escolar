@@ -25,7 +25,10 @@ typedef struct {
     char subject[64], title[121], description[1024], due_date[11];
 } PendingTask;
 
+/* Usado somente para interpretar o texto de tarefa enviado por professor;
+ * consulta de aluno nunca aceita turma indicada na mensagem. */
 static int class_mentioned(const char *body, Class *classroom);
+
 
 int whatsapp_init(void)
 {
@@ -264,21 +267,20 @@ static int teacher_task(const char *phone, int64_t user_id, const char *body, ch
         snprintf(reply,cap,"Seu cadastro de professor nao foi encontrado. Procure a coordenacao."); return SUCCESS;
     }
     if (classes_find_by_name(class_name,&classroom) != SUCCESS) {
-        /* Na Fase 0 a coordenação não pré-vincula turmas aos professores.
-         * Turmas novas podem ser criadas pelo professor ao enviar a tarefa. */
-        if (!validation_length_between(class_name, 1, 63) ||
-            classes_create(class_name, class_name, SHIFT_MORNING, &classroom) != SUCCESS) {
-            snprintf(reply,cap,"Nao consegui identificar ou criar a turma %s. Confira o nome e tente novamente.",class_name); return SUCCESS;
-        }
+        snprintf(reply, cap,
+            "A turma %s nao esta cadastrada. Peça a coordenacao para cria-la antes de enviar a tarefa.",
+            class_name);
+        return SUCCESS;
     }
     if (strcmp(classroom.status, "ACTIVE") != 0) {
         snprintf(reply,cap,"A turma %s nao esta ativa.",class_name); return SUCCESS;
     }
     task.class_id=classroom.id;
     if (!classes_teacher_has_access(task.teacher_id,task.class_id)) {
-        if (classes_link_teacher(task.teacher_id, task.class_id) != SUCCESS) {
-            snprintf(reply,cap,"Nao consegui associar voce a turma %s.",classroom.name); return SUCCESS;
-        }
+        snprintf(reply, cap,
+            "Voce nao esta autorizado a cadastrar tarefas para a turma %s. Peça a coordenacao para liberar o acesso.",
+            classroom.name);
+        return SUCCESS;
     }
     int pending_rc = pending_save(phone,&task);
     if (pending_rc != SUCCESS) {
@@ -401,125 +403,22 @@ static int student_message(const char *body, int64_t assigned_class_id,
             used += (size_t)snprintf(context + used, sizeof context - used, "%s%s: %s", i ? "; " : "", tasks[i].subject, tasks[i].title);
     }
     free(tasks);
-    (void)ai_answer_student_question(question, context, reply, cap);
+    int ai_rc = ai_answer_student_question(question, context, reply, cap);
+    if (ai_rc != SUCCESS || !reply[0]) {
+        snprintf(reply, cap,
+                 "Nao consegui preparar uma resposta agora. Tente novamente em alguns instantes.");
+    }
     return SUCCESS;
 }
 
-static int anonymous_class_load(const char *phone, int64_t *class_id, char *pending, size_t pending_cap)
-{
-    sqlite3_stmt *st = NULL;
-    if (db_prepare("SELECT class_id,pending_question FROM anonymous_students WHERE phone=?;", &st) != SUCCESS)
-        return ERROR_DATABASE;
-    db_bind_text(st, 1, phone);
-    int found = sqlite3_step(st) == SQLITE_ROW;
-    if (found) {
-        *class_id = sqlite3_column_type(st, 0) == SQLITE_NULL ? 0 : sqlite3_column_int64(st, 0);
-        const unsigned char *question = sqlite3_column_text(st, 1);
-        if (pending && pending_cap) snprintf(pending, pending_cap, "%s", question ? (const char *)question : "");
-    }
-    sqlite3_finalize(st);
-    return found ? SUCCESS : ERROR_NOT_FOUND;
-}
-
-static int anonymous_class_save(const char *phone, int64_t class_id, const char *pending)
-{
-    sqlite3_stmt *st = NULL;
-    if (db_prepare("INSERT INTO anonymous_students(phone,class_id,pending_question) VALUES(?,?,?) "
-                   "ON CONFLICT(phone) DO UPDATE SET class_id=excluded.class_id,"
-                   "pending_question=excluded.pending_question,updated_at=datetime('now');", &st) != SUCCESS)
-        return ERROR_DATABASE;
-    db_bind_text(st, 1, phone);
-    if (class_id > 0) db_bind_int64(st, 2, (long long)class_id); else db_bind_null(st, 2);
-    if (pending && *pending) db_bind_text(st, 3, pending); else db_bind_null(st, 3);
-    int ok = sqlite3_step(st) == SQLITE_DONE;
-    sqlite3_finalize(st);
-    return ok ? SUCCESS : ERROR_DATABASE;
-}
-
-static int looks_like_class_name(const char *text)
-{
-    size_t len = strlen(text);
-    if (!len || len > 31 || strchr(text, '?') || contains_ci(text, "tarefa") ||
-        contains_ci(text, "atividade") || contains_ci(text, "como ") ||
-        contains_ci(text, "duvida") || contains_ci(text, "dúvida")) return 0;
-    int digit = 0, alpha = 0;
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
-        if (isdigit(*p)) digit = 1;
-        if (isalpha(*p)) alpha = 1;
-        if (!(isalnum(*p) || isspace(*p) || *p >= 0x80 || *p == '-' || *p == '.')) return 0;
-    }
-    return digit && alpha;
-}
-
-static int student_task_submission(const char *body)
-{
-    int assignment_content = contains_ci(body, "pagina") || contains_ci(body, "página") ||
-        contains_ci(body, "exercicio") || contains_ci(body, "exercício") ||
-        contains_ci(body, "fazer ") || contains_ci(body, "ler ") ||
-        contains_ci(body, "redacao") || contains_ci(body, "redação") ||
-        contains_ci(body, "trabalho");
-    return prefix_ci(body, "tarefa de aluno") || prefix_ci(body, "minha tarefa:") ||
-        contains_ci(body, "criar tarefa") || contains_ci(body, "cadastrar tarefa") ||
-        contains_ci(body, "entrega: ") ||
-        (contains_ci(body, "entrega") &&
-         (contains_ci(body, "matem") || contains_ci(body, "portugu") ||
-          contains_ci(body, "hist") || contains_ci(body, "cien") ||
-          contains_ci(body, "ingl")) && assignment_content);
-}
-
-static int resolve_student_class(const char *body, Class *classroom)
-{
-    if (class_mentioned(body, classroom) && strcmp(classroom->status, "ACTIVE") == 0) return SUCCESS;
-    char candidate[64];
-    snprintf(candidate, sizeof candidate, "%s", body);
-    trim(candidate);
-    /* A turma pode vir no começo da pergunta ("9A tem tarefa?"). */
-    char *end = candidate;
-    while (*end && !isspace((unsigned char)*end) && *end != ',' && *end != ':' && *end != '?') ++end;
-    if (*end) *end = '\0';
-    if (!looks_like_class_name(candidate)) return ERROR_NOT_FOUND;
-    if (classes_find_by_name(candidate, classroom) == SUCCESS)
-        return strcmp(classroom->status, "ACTIVE") == 0 ? SUCCESS : ERROR_NOT_FOUND;
-    return classes_create(candidate, candidate, SHIFT_MORNING, classroom);
-}
 
 static int anonymous_student_message(const char *phone, const char *body, char *reply, size_t cap)
 {
-    if (student_task_submission(body)) {
-        snprintf(reply, cap, "Este numero nao esta autorizado como professor. Alunos nao podem cadastrar tarefas; consulte as atividades ou procure a coordenacao.");
-        return SUCCESS;
-    }
-    int64_t class_id = 0;
-    char pending[2001] = {0};
-    (void)anonymous_class_load(phone, &class_id, pending, sizeof pending);
-    if (class_id <= 0) {
-        Class classroom;
-        if (resolve_student_class(body, &classroom) != SUCCESS) {
-            const char *question = pending[0] ? pending : body;
-            if (anonymous_class_save(phone, 0, question) != SUCCESS) {
-                snprintf(reply, cap, "Nao consegui guardar sua conversa agora. Tente novamente.");
-                return SUCCESS;
-            }
-            snprintf(reply, cap, "De qual turma voce e? (ex.: 9A, 1o EM)");
-            return SUCCESS;
-        }
-        class_id = classroom.id;
-        if (anonymous_class_save(phone, class_id, NULL) != SUCCESS) {
-            snprintf(reply, cap, "Nao consegui guardar sua turma. Tente novamente.");
-            return SUCCESS;
-        }
-        const char *question = pending[0] ? pending : body;
-        if (pending[0] || !class_mentioned(body, &classroom))
-            return student_message(question, class_id, reply, cap);
-        /* Se a primeira mensagem já incluía uma turma, processe-a agora. */
-        return student_message(body, class_id, reply, cap);
-    }
-    Class mentioned;
-    if (class_mentioned(body, &mentioned) && strcmp(mentioned.status, "ACTIVE") == 0 && mentioned.id != class_id) {
-        class_id = mentioned.id;
-        (void)anonymous_class_save(phone, class_id, NULL);
-    }
-    return student_message(body, class_id, reply, cap);
+    (void)phone;
+    (void)body;
+    snprintf(reply, cap,
+        "Este numero nao esta cadastrado como aluno. Peça a coordenacao para cadastrar seu nome, telefone e turma.");
+    return SUCCESS;
 }
 
 static int coordinator_notice_message(const char *phone, int64_t author_id,
@@ -580,6 +479,7 @@ static int coordinator_notice_message(const char *phone, int64_t author_id,
 
 int whatsapp_receive_message(const char *phone, const char *body, char *reply, size_t cap)
 {
+    if (reply && cap) reply[0] = '\0';
     if (!phone || !validation_is_valid_phone(phone)) return ERROR_INVALID_PHONE;
     if (!body || !reply || cap < 16 || !validation_length_between(body,1,2000)) return ERROR_INVALID_INPUT;
     User user;
@@ -601,6 +501,24 @@ int whatsapp_receive_message(const char *phone, const char *body, char *reply, s
         }
         return teacher_task(phone,user.id,body,reply,cap);
     }
-    if (user.type == USER_TYPE_STUD) return anonymous_student_message(phone, body, reply, cap);
+    if (user.type == USER_TYPE_STUD) {
+        sqlite3_stmt *student = NULL;
+        if (db_prepare("SELECT class_id FROM students WHERE user_id=?;", &student) != SUCCESS) {
+            snprintf(reply, cap, "Nao consegui verificar seu cadastro agora. Tente novamente.");
+            return SUCCESS;
+        }
+        db_bind_int64(student, 1, (long long)user.id);
+        int linked = sqlite3_step(student) == SQLITE_ROW &&
+            sqlite3_column_type(student, 0) != SQLITE_NULL;
+        int64_t class_id = linked ? sqlite3_column_int64(student, 0) : 0;
+        sqlite3_finalize(student);
+        Class classroom;
+        if (class_id <= 0 || classes_find_by_id(class_id, &classroom) != SUCCESS ||
+            strcmp(classroom.status, "ACTIVE") != 0) {
+            snprintf(reply, cap, "Seu cadastro ainda nao esta associado a uma turma ativa. Procure a coordenacao.");
+            return SUCCESS;
+        }
+        return student_message(body, class_id, reply, cap);
+    }
     return coordinator_notice_message(phone, user.id, body, reply, cap);
 }

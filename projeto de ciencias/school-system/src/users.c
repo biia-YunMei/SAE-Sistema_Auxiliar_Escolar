@@ -1,10 +1,5 @@
-/* users.c
- * Implementação do CRUD de usuários.
- *
- * Senhas: SHA-256 com salt embutido no formato "salt:hash" em hex.
- * Para uma feira de ciências isso é suficiente. Em produção, usar
- * bcrypt/argon2 (apontado no README como evolução).
- */
+/* users.c: CRUD de usuários, hashes PBKDF2 para novas senhas e verificação
+ * dos hashes SHA-256 legados durante a migração transparente de contas. */
 #include "users.h"
 #include "database.h"
 #include "validation.h"
@@ -15,14 +10,15 @@
 #include <string.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <time.h>
 
-/* OpenSSL é opcional. Se disponível, use SHA256 acelerado.
- * Caso contrário, ativamos o fallback abaixo com nossa própria
- * implementação de SHA-256 (didática, suficiente para a feira). */
+/* OpenSSL fornece PBKDF2 e aleatoriedade para hashes novos. O SHA-256 próprio
+ * abaixo só verifica hashes antigos em builds sem OpenSSL. */
 #if defined(HAVE_OPENSSL_SHA)
 #  include <openssl/sha.h>
 #  include <openssl/rand.h>
+#  include <openssl/evp.h>
 #endif
 
 #ifndef HAVE_OPENSSL_SHA
@@ -111,6 +107,17 @@ static void to_hex(const uint8_t *src, size_t n, char *dst)
     dst[n*2] = '\0';
 }
 
+static int from_hex(const char *src, uint8_t *dst, size_t bytes)
+{
+    if (!src || !dst || strlen(src) != bytes * 2) return 0;
+    for (size_t i = 0; i < bytes; ++i) {
+        unsigned int value = 0;
+        if (sscanf(src + i * 2, "%2x", &value) != 1) return 0;
+        dst[i] = (uint8_t)value;
+    }
+    return 1;
+}
+
 static int random_salt_hex(char *out)
 {
     /* 16 bytes -> 32 hex chars. */
@@ -161,33 +168,60 @@ UserType user_type_from(const char *s)
 
 int users_hash_password(const char *plain, char *out_hex, size_t cap)
 {
-    if (!plain || !out_hex || cap < 80) return ERROR_INVALID_INPUT;
+    if (!plain || !out_hex || cap < 119) return ERROR_INVALID_INPUT;
+    if (!validation_length_between(plain, 8, 127)) return ERROR_INVALID_INPUT;
+#if !defined(HAVE_OPENSSL_SHA)
+    (void)plain; (void)out_hex; (void)cap;
+    return ERROR_CONFIG;
+#else
     char salt[33];
     if (random_salt_hex(salt) != SUCCESS) return ERROR_INTERNAL;
-
-    char buf[256];
-    int n = snprintf(buf, sizeof buf, "%s|%s", salt, plain);
-    if (n < 0 || (size_t)n >= sizeof buf) return ERROR_TOO_LONG;
-
+    if (strlen(plain) > INT_MAX) return ERROR_TOO_LONG;
+    uint8_t salt_bytes[16];
+    if (!from_hex(salt, salt_bytes, sizeof salt_bytes)) return ERROR_INTERNAL;
     uint8_t digest[32];
-#ifdef HAVE_OPENSSL_SHA
-    SHA256((const unsigned char *)buf, (size_t)n, digest);
-#else
-    sha256_ctx c; sha256_init(&c);
-    sha256_update(&c, (const uint8_t *)buf, (size_t)n);
-    sha256_final(&c, digest);
-#endif
+    const int iterations = 210000;
+    if (PKCS5_PBKDF2_HMAC(plain, (int)strlen(plain), salt_bytes,
+            (int)sizeof salt_bytes, iterations, EVP_sha256(),
+            (int)sizeof digest, digest) != 1) return ERROR_INTERNAL;
     char hex[65];
     to_hex(digest, sizeof digest, hex);
-
-    int w = snprintf(out_hex, cap, "%s:%s", salt, hex);
+    int w = snprintf(out_hex, cap, "pbkdf2-sha256$%d$%s$%s",
+                     iterations, salt, hex);
     if (w < 0 || (size_t)w >= cap) return ERROR_TOO_LONG;
     return SUCCESS;
+#endif
 }
 
 int users_verify_password(const char *plain, const char *stored)
 {
     if (!plain || !stored) return ERROR_UNAUTHORIZED;
+    if (strncmp(stored, "pbkdf2-sha256$", 14) == 0) {
+#if !defined(HAVE_OPENSSL_SHA)
+        return ERROR_CONFIG;
+#else
+        const char *iterations_text = stored + 14;
+        char *end = NULL;
+        long iterations = strtol(iterations_text, &end, 10);
+        if (!end || *end != '$' || iterations < 100000 || iterations > 1000000)
+            return ERROR_UNAUTHORIZED;
+        const char *salt_hex = end + 1;
+        const char *digest_hex = strchr(salt_hex, '$');
+        if (!digest_hex || (size_t)(digest_hex - salt_hex) != 32 ||
+            strlen(digest_hex + 1) != 64 || strlen(plain) > INT_MAX)
+            return ERROR_UNAUTHORIZED;
+        char salt_text[33]; uint8_t salt[16], expected[32], actual[32];
+        memcpy(salt_text, salt_hex, 32); salt_text[32] = '\0';
+        if (!from_hex(salt_text, salt, sizeof salt) ||
+            !from_hex(digest_hex + 1, expected, sizeof expected) ||
+            PKCS5_PBKDF2_HMAC(plain, (int)strlen(plain), salt, (int)sizeof salt,
+                (int)iterations, EVP_sha256(), (int)sizeof actual, actual) != 1)
+            return ERROR_UNAUTHORIZED;
+        unsigned int diff = 0;
+        for (size_t i = 0; i < sizeof actual; ++i) diff |= actual[i] ^ expected[i];
+        return diff == 0 ? SUCCESS : ERROR_UNAUTHORIZED;
+#endif
+    }
     const char *sep = strchr(stored, ':');
     if (!sep) return ERROR_UNAUTHORIZED;
     size_t slen = (size_t)(sep - stored);
@@ -206,10 +240,15 @@ int users_verify_password(const char *plain, const char *stored)
     sha256_update(&c, (const uint8_t *)buf, (size_t)n);
     sha256_final(&c, digest);
 #endif
-    char hex[65];
-    to_hex(digest, sizeof digest, hex);
-    if (strcmp(hex, sep + 1) != 0) return ERROR_UNAUTHORIZED;
-    return SUCCESS;
+    if (strlen(sep + 1) != 64) return ERROR_UNAUTHORIZED;
+    unsigned int diff = 0;
+    for (size_t i = 0; i < sizeof digest; ++i) {
+        unsigned int expected = 0;
+        if (sscanf(sep + 1 + i * 2, "%2x", &expected) != 1)
+            return ERROR_UNAUTHORIZED;
+        diff |= digest[i] ^ (uint8_t)expected;
+    }
+    return diff == 0 ? SUCCESS : ERROR_UNAUTHORIZED;
 }
 
 /* ===================== CRUD ====================================== */

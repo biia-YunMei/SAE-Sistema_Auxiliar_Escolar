@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #if defined(_WIN32)
 #include <direct.h>
@@ -48,27 +49,17 @@ int main(void)
     log_error("linha error com %d", 42);
     logger_shutdown();
 
-    /* Identifica o arquivo de log do dia */
-    char path[256];
-    snprintf(path, sizeof path, "%s/school-today-not-used", dir);
-    (void)path;
-
-    /* Verifica que há um arquivo recente não-vazio */
-    long total = 0;
-    /* Conta arquivos no diretório */
-    /* Implementação simples: usamos o fato de o logger abrir um arquivo com data. */
-    struct stat st;
-    if (stat("logs/test", &st) == 0) {
-        /* diretório existe; basta checar que logger_init não falhou */
-        CHECK(1);
-    } else {
-        CHECK(0);
-    }
-
-    /* Heurística: stat em padrão wildcard manualmente é trabalhoso;
-     * aceitamos qualquer arquivo .log dentro do dir com tamanho > 0. */
-    FILE *f = fopen("logs/test/school-20260101.log", "r");
-    if (f) { total += file_size("logs/test/school-20260101.log"); fclose(f); }
+    time_t now = time(NULL);
+    struct tm today;
+    char date[16] = {0}, path[256] = {0};
+#if defined(_WIN32)
+    CHECK(localtime_s(&today, &now) == 0);
+#else
+    CHECK(localtime_r(&now, &today) != NULL);
+#endif
+    CHECK(strftime(date, sizeof date, "%Y%m%d", &today) > 0);
+    snprintf(path, sizeof path, "%s/school-%s.log", dir, date);
+    CHECK(file_size(path) > 0);
 
     CHECK(logger_get_level() == LOG_DEBUG);
     printf("\nLogger: %d passed, %d failed\n", passed, failed);

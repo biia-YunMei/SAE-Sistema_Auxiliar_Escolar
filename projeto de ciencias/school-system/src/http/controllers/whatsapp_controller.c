@@ -1,13 +1,15 @@
 /* whatsapp_controller.c
  * Webhook de entrada do WhatsApp.
  *
- * Recebe o envelope oficial da Meta ou o formato JSON simplificado usado
+ * Recebe o envelope compatível com o provedor configurado ou o formato JSON simplificado usado
  * localmente e delega o processamento ao módulo whatsapp.c.
  */
 #include "http_server.h"
 #include "auth.h"
 #include "database.h"
 #include "validation.h"
+#include "classes.h"
+#include "users.h"
 #include "logger.h"
 #include "config.h"
 #include "whatsapp.h"
@@ -16,6 +18,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <errno.h>
 
 #if defined(HAVE_OPENSSL_SHA)
 #include <openssl/evp.h>
@@ -40,10 +44,13 @@ static int json_extract_string(const char *body, const char *key,
     while (*p && *p != '"') {
         if (*p == '\\' && p[1]) {
             ++p;
-            if (*p == 'n') out[used++] = '\n';
-            else if (*p == 'r') out[used++] = '\r';
-            else if (*p == 't') out[used++] = '\t';
-            else out[used++] = *p;
+            char ch;
+            if (*p == 'n') ch = '\n';
+            else if (*p == 'r') ch = '\r';
+            else if (*p == 't') ch = '\t';
+            else ch = *p;
+            if (used + 1 >= cap) return 0;
+            out[used++] = ch;
             ++p;
         } else {
             if (used + 1 >= cap) return 0;
@@ -56,9 +63,9 @@ static int json_extract_string(const char *body, const char *key,
     return 1;
 }
 
-/* Extrai o primeiro evento no formato oficial da Meta sem depender de um
+/* Extrai o primeiro evento no formato compatível com o provedor sem depender de um
  * parser JSON externo. A varredura respeita strings e caracteres escapados. */
-static int json_extract_meta_message(const char *body, char *from, size_t from_cap,
+static int json_extract_provider_message(const char *body, char *from, size_t from_cap,
                                      char *event_id, size_t id_cap, char *text,
                                      size_t text_cap, char *type, size_t type_cap)
 {
@@ -117,16 +124,6 @@ static int require_coordinator(const HttpRequest *req, HttpResponse *res)
     return SUCCESS;
 }
 
-static long long json_extract_int(const char *body, const char *key)
-{
-    char needle[64];
-    int written = snprintf(needle, sizeof needle, "\"%s\":", key);
-    const char *value = body ? strstr(body, needle) : NULL;
-    if (written < 0 || !value) return 0;
-    value += written;
-    return strtoll(value, NULL, 10);
-}
-
 static int query_value(const char *query, const char *key, char *out, size_t cap)
 {
     size_t key_len = strlen(key);
@@ -159,7 +156,7 @@ static int normalize_phone(const char *source, char *phone, size_t cap)
     return validation_is_valid_phone(phone);
 }
 
-/* Evento com ID da Meta só pode executar o fluxo de negócio uma vez. */
+/* Evento identificado pelo provedor só executa o fluxo de negócio uma vez. */
 static int claim_inbound_event(const char *event_id, const char *phone)
 {
     sqlite3_stmt *statement = NULL;
@@ -231,14 +228,14 @@ static int verify_webhook(const HttpRequest *req, HttpResponse *res)
         log_warn("whatsapp: tentativa de verificação recusada");
         return http_respond_error(res, 403, "verification failed");
     }
-    log_info("whatsapp: webhook verificado pela Meta");
+    log_info("whatsapp: webhook validado pelo provedor configurado");
     return http_respond_text(res, 200, challenge);
 }
 
 static int verify_payload_signature(const HttpRequest *req, HttpResponse *res)
 {
     const AppConfig *cfg = config_current();
-    if (!cfg || !cfg->whatsapp_app_secret[0])
+    if (!cfg || !cfg->whatsapp_webhook_secret[0])
         return http_respond_error(res, 500, "webhook signature not configured");
 
 #if !defined(HAVE_OPENSSL_SHA)
@@ -255,8 +252,8 @@ static int verify_payload_signature(const HttpRequest *req, HttpResponse *res)
         strncmp(req->webhook_signature, prefix, sizeof prefix - 1) != 0) {
         return http_respond_error(res, 401, "missing webhook signature");
     }
-    if (!HMAC(EVP_sha256(), cfg->whatsapp_app_secret,
-              (int)strlen(cfg->whatsapp_app_secret),
+    if (!HMAC(EVP_sha256(), cfg->whatsapp_webhook_secret,
+              (int)strlen(cfg->whatsapp_webhook_secret),
               (const unsigned char *)req->body, req->body_len,
               digest, &digest_len) || digest_len != 32) {
         log_error("whatsapp: nao foi possivel calcular assinatura");
@@ -285,7 +282,7 @@ static int verify_payload_signature(const HttpRequest *req, HttpResponse *res)
 #endif
 }
 
-/* Webhook oficial da Meta. GET confirma o callback; POST recebe eventos. */
+/* Endpoint de webhook compatível com o provedor configurado. */
 int ctrl_whatsapp_webhook(const HttpRequest *req, HttpResponse *res)
 {
     if (strcmp(req->method, "GET") == 0) return verify_webhook(req, res);
@@ -300,18 +297,20 @@ int ctrl_whatsapp_webhook(const HttpRequest *req, HttpResponse *res)
      * mas não recebem uma resposta automática. */
     char raw_from[32] = {0}, from[32] = {0}, text[2048] = {0}, media_type[32] = {0};
     char event_id[201] = {0};
-    int meta_event = json_extract_meta_message(req->body, raw_from, sizeof raw_from,
+    int provider_event = json_extract_provider_message(req->body, raw_from, sizeof raw_from,
         event_id, sizeof event_id, text, sizeof text, media_type, sizeof media_type);
-    if (meta_event < 0) return http_respond_error(res, 500, "out of memory");
-    if (!meta_event && !json_extract_string(req->body, "from", raw_from, sizeof raw_from)) {
+    if (provider_event < 0) return http_respond_error(res, 500, "out of memory");
+    if (!provider_event && !json_extract_string(req->body, "from", raw_from, sizeof raw_from)) {
         return http_respond_json(res, 200, "{\"status\":\"ignored\"}");
     }
     if (!normalize_phone(raw_from, from, sizeof from))
         return http_respond_error(res, 400, "invalid phone");
     if (!event_id[0]) {
-        (void)(json_extract_string(req->body, "id", event_id, sizeof event_id) ||
-               json_extract_string(req->body, "message_id", event_id, sizeof event_id));
+        (void)json_extract_string(req->body, "message_id", event_id, sizeof event_id);
     }
+    /* Sem ID único não há deduplicação confiável; rejeitar evita efeitos
+     * repetidos (incluindo tarefas) em retries do provedor. */
+    if (!event_id[0]) return http_respond_error(res, 400, "message id required");
     if (event_id[0]) {
         int claimed = claim_inbound_event(event_id, from);
         if (claimed == 0) {
@@ -329,12 +328,12 @@ int ctrl_whatsapp_webhook(const HttpRequest *req, HttpResponse *res)
         }
         if (claimed < 0) return http_respond_error(res, 500, "event persistence failed");
     }
-    if ((!meta_event && !json_extract_string(req->body, "body", text, sizeof text)) ||
-        (meta_event && strcmp(media_type, "text") != 0)) {
-        if (meta_event && strcmp(media_type, "image") == 0 && text[0]) {
+    if ((!provider_event && !json_extract_string(req->body, "body", text, sizeof text)) ||
+        (provider_event && strcmp(media_type, "text") != 0)) {
+        if (provider_event && strcmp(media_type, "image") == 0 && text[0]) {
             /* Legendas de fotos seguem como texto contextual para a IA tutora. */
         } else {
-            if (!meta_event) (void)json_extract_string(req->body, "type", media_type, sizeof media_type);
+            if (!provider_event) (void)json_extract_string(req->body, "type", media_type, sizeof media_type);
             const char *guidance = NULL;
             if (strcmp(media_type, "audio") == 0)
                 guidance = "Ainda nao consigo transcrever audio. Envie a tarefa ou duvida por texto.";
@@ -367,7 +366,7 @@ int ctrl_whatsapp_webhook(const HttpRequest *req, HttpResponse *res)
 
     rc = whatsapp_send_message(from, reply);
     if (rc != SUCCESS) {
-        /* Confirmamos o evento para evitar que a Meta reenvie a mesma
+        /* Confirmamos o evento para evitar que o provedor reenvie a mesma
          * mensagem e gere processamento duplicado. A falha fica registrada
          * no log para uma rotina de retentativa futura. */
         log_error("whatsapp: resposta para %s nao enviada (%d)", from, rc);
@@ -380,8 +379,46 @@ int ctrl_whatsapp_webhook(const HttpRequest *req, HttpResponse *res)
     return http_respond_json(res, 200, "{\"status\":\"processed\"}");
 }
 
-/* Envio manual de aviso. Mantemos a credencial da Meta exclusivamente no
- * servidor; o cliente CLI apenas usa a sessao autenticada do coordenador. */
+static int normalize_outgoing_phone(const char *source, char phone[32])
+{
+    if (!source || !*source) return 0;
+    int has_country_prefix = source[0] == '+';
+    char digits_text[24];
+    size_t digits = 0;
+    for (const unsigned char *p = (const unsigned char *)source; *p; ++p) {
+        if (isdigit(*p)) {
+            if (digits + 1 >= sizeof digits_text) return 0;
+            digits_text[digits++] = (char)*p;
+        } else if ((*p == '+' && p != (const unsigned char *)source) ||
+                   (*p != '+' && *p != ' ' && *p != '-' && *p != '(' && *p != ')' && *p != '.')) {
+            return 0;
+        }
+    }
+    digits_text[digits] = '\0';
+    if (digits < 8 || digits > 15) return 0;
+    const char *country = (!has_country_prefix && (digits == 10 || digits == 11)) ? "55" : "";
+    phone[0] = '+';
+    size_t country_len = strlen(country);
+    memcpy(phone + 1, country, country_len);
+    memcpy(phone + 1 + country_len, digits_text, digits + 1);
+    return validation_is_valid_phone(phone);
+}
+
+static int whatsapp_message_body(const HttpRequest *req, char phone[32],
+                                char message[4001])
+{
+    char input_phone[32] = {0};
+    if (!json_extract_string(req->body, "phone", input_phone, sizeof input_phone) ||
+        !normalize_outgoing_phone(input_phone, phone) ||
+        !json_extract_string(req->body, "message", message, 4001) ||
+        !validation_length_between(message, 1, 4000)) return 0;
+    for (const unsigned char *p = (const unsigned char *)message; *p; ++p)
+        if (*p < 0x20 && *p != '\n' && *p != '\r' && *p != '\t') return 0;
+    return 1;
+}
+
+/* Envio unitário pela API externa configurada no SAE. O destino precisa estar
+ * cadastrado no sistema; a API externa da feira continua limitada a /reply. */
 int ctrl_whatsapp_send(const HttpRequest *req, HttpResponse *res)
 {
     if (strcmp(req->method, "POST") != 0)
@@ -389,65 +426,103 @@ int ctrl_whatsapp_send(const HttpRequest *req, HttpResponse *res)
 
     int auth_rc = require_coordinator(req, res);
     if (auth_rc != SUCCESS) return auth_rc;
+    char phone[32] = {0}, message[4001] = {0};
+    if (!whatsapp_message_body(req, phone, message))
+        return http_respond_error(res, 400, "invalid phone or message");
 
-    char phone[32] = {0};
-    char message[4001] = {0};
-    if (!json_extract_string(req->body, "phone", phone, sizeof phone) ||
-        !json_extract_string(req->body, "message", message, sizeof message)) {
-        return http_respond_error(res, 400, "phone and message are required");
-    }
-    if (!validation_is_valid_phone(phone))
-        return http_respond_error(res, 400, "invalid phone");
-    if (!validation_length_between(message, 1, 4000) ||
-        !validation_is_safe_text(message)) {
-        return http_respond_error(res, 400, "invalid message");
-    }
+    sqlite3_stmt *statement = NULL;
+    if (db_prepare("SELECT 1 FROM users WHERE phone=? AND status='ACTIVE' LIMIT 1;",
+                   &statement) != SUCCESS)
+        return http_respond_error(res, 500, "database error");
+    db_bind_text(statement, 1, phone);
+    int registered = sqlite3_step(statement) == SQLITE_ROW;
+    sqlite3_finalize(statement);
+    if (!registered) return http_respond_error(res, 404, "registered contact not found");
 
-    int send_rc = whatsapp_send_message(phone, message);
-    if (send_rc != SUCCESS) {
-        log_error("whatsapp: notificacao manual falhou para %s (%d)", phone, send_rc);
-        return http_respond_error(res, 502, "notification delivery failed");
-    }
-    log_info("whatsapp: notificacao manual enviada para %s", phone);
+    int rc = whatsapp_send_message(phone, message);
+    if (rc == ERROR_CONFIG || rc == ERROR_NOT_IMPLEMENTED)
+        return http_respond_error(res, 503, "WhatsApp provider is not configured");
+    if (rc != SUCCESS) return http_respond_error(res, 502, "WhatsApp message could not be sent");
     return http_respond_json(res, 200, "{\"status\":\"sent\"}");
 }
 
-/* Envia o mesmo comunicado a todos os alunos ativos de uma turma. A Meta
- * pode recusar envios fora da janela permitida; nesse caso a resposta mostra
- * quantos foram enviados e quantos falharam, sem interromper o lote. */
+/* Envio individual para estudantes matriculados na turma. Professores só
+ * podem enviar para turmas às quais estão vinculados; coordenação pode todas. */
 int ctrl_whatsapp_notify_class(const HttpRequest *req, HttpResponse *res)
 {
     if (strcmp(req->method, "POST") != 0)
         return http_respond_error(res, 405, "method not allowed");
-    int auth_rc = require_coordinator(req, res);
-    if (auth_rc != SUCCESS) return auth_rc;
+    AuthSession sender;
+    if (!req->auth || auth_session_resolve(req->auth, &sender) != SUCCESS)
+        return http_respond_error(res, 401, "invalid session");
+    if (sender.type != USER_TYPE_COORD && sender.type != USER_TYPE_PROF)
+        return http_respond_error(res, 403, "forbidden");
 
-    long long class_id = json_extract_int(req->body, "class_id");
     char message[4001] = {0};
-    if (class_id <= 0 || !json_extract_string(req->body, "message", message, sizeof message))
+    long long class_id = 0;
+    const char *class_field = strstr(req->body, "\"class_id\":");
+    if (class_field) {
+        class_field += sizeof("\"class_id\":") - 1;
+        while (*class_field == ' ' || *class_field == '\t') ++class_field;
+        char *end = NULL;
+        errno = 0;
+        class_id = strtoll(class_field, &end, 10);
+        if (errno == ERANGE || end == class_field || class_id <= 0 ||
+            (*end != ',' && *end != '}' && !isspace((unsigned char)*end))) class_id = 0;
+    }
+    if (class_id <= 0 || !json_extract_string(req->body, "message", message, sizeof message) ||
+        !validation_length_between(message, 1, 4000))
         return http_respond_error(res, 400, "class_id and message are required");
-    if (!validation_length_between(message, 1, 4000) || !validation_is_safe_text(message))
-        return http_respond_error(res, 400, "invalid message");
+    for (const unsigned char *p = (const unsigned char *)message; *p; ++p)
+        if (*p < 0x20 && *p != '\n' && *p != '\r' && *p != '\t')
+            return http_respond_error(res, 400, "message contains invalid characters");
+
+    if (sender.type == USER_TYPE_PROF) {
+        sqlite3_stmt *teacher = NULL;
+        if (db_prepare("SELECT id FROM teachers WHERE user_id=?;", &teacher) != SUCCESS)
+            return http_respond_error(res, 500, "database error");
+        db_bind_int64(teacher, 1, sender.user_id);
+        int found = sqlite3_step(teacher) == SQLITE_ROW;
+        long long teacher_id = found ? sqlite3_column_int64(teacher, 0) : 0;
+        sqlite3_finalize(teacher);
+        if (!found || !classes_teacher_has_access(teacher_id, class_id))
+            return http_respond_error(res, 403, "not linked to class");
+    }
 
     sqlite3_stmt *statement = NULL;
-    if (db_prepare("SELECT u.phone FROM students s JOIN users u ON u.id=s.user_id "
-                   "WHERE s.class_id=? AND u.status='ACTIVE';", &statement) != SUCCESS)
+    if (db_prepare(
+            "SELECT u.phone FROM students s JOIN users u ON u.id=s.user_id "
+            "JOIN classes c ON c.id=s.class_id "
+            "WHERE s.class_id=? AND c.status='ACTIVE' AND u.status='ACTIVE' "
+            "ORDER BY s.id LIMIT 101;", &statement) != SUCCESS)
         return http_respond_error(res, 500, "database error");
     db_bind_int64(statement, 1, class_id);
-    int sent = 0;
-    int failed = 0;
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        const char *phone = (const char *)sqlite3_column_text(statement, 0);
-        if (phone && whatsapp_send_message(phone, message) == SUCCESS) ++sent;
-        else ++failed;
+    char (*phones)[32] = calloc(101, sizeof *phones);
+    if (!phones) { sqlite3_finalize(statement); return http_respond_error(res, 500, "out of memory"); }
+    size_t count = 0;
+    int step;
+    while ((step = sqlite3_step(statement)) == SQLITE_ROW && count < 101) {
+        const unsigned char *value = sqlite3_column_text(statement, 0);
+        if (!value || !normalize_outgoing_phone((const char *)value, phones[count])) continue;
+        ++count;
     }
     sqlite3_finalize(statement);
+    if (count > 100) { free(phones); return http_respond_error(res, 413, "class exceeds 100 recipients"); }
+    if (step != SQLITE_DONE) { free(phones); return http_respond_error(res, 500, "database error"); }
+    if (count == 0) { free(phones); return http_respond_error(res, 404, "class has no registered students"); }
 
+    size_t sent = 0, failed = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (whatsapp_send_message(phones[i], message) == SUCCESS) ++sent;
+        else ++failed;
+    }
+    free(phones);
     char response[128];
-    snprintf(response, sizeof response, "{\"sent\":%d,\"failed\":%d}", sent, failed);
-    log_info("whatsapp: aviso de turma=%lld enviados=%d falhas=%d",
-             class_id, sent, failed);
-    return http_respond_json(res, 200, response);
+    (void)snprintf(response, sizeof response,
+                   "{\"status\":\"%s\",\"sent\":%zu,\"failed\":%zu}",
+                   failed ? "partial" : "sent", sent, failed);
+    if (sent == 0) return http_respond_error(res, 502, "WhatsApp messages could not be sent");
+    return http_respond_json(res, failed ? 207 : 200, response);
 }
 
 /* Health check — útil em Docker/Kubernetes. */

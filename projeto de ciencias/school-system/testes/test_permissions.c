@@ -44,7 +44,7 @@ int main(void)
 
     /* Cadastra um professor */
     User prof;
-    CHECK(users_create("Prof", "+5511988887777", USER_TYPE_PROF, NULL, &prof)
+    CHECK(users_create("Prof", "+5511988887777", USER_TYPE_PROF, "senhaProf", &prof)
           == SUCCESS);
     /* O perfil de professor é criado junto com o usuário. */
     int64_t teacher_id = 0;

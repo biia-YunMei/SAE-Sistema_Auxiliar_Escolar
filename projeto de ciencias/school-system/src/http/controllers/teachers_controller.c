@@ -72,9 +72,13 @@ int ctrl_teachers_create(const HttpRequest *req, HttpResponse *res)
     int rc = coordinator(req, res, &session);
     if (rc != SUCCESS) return rc;
     char name[121] = {0}, raw_phone[64] = {0}, phone[32] = {0}, email[256] = {0};
+    char password[128] = {0};
     if (!field(req->body, "name", name, sizeof name) ||
-        !field(req->body, "whatsapp", raw_phone, sizeof raw_phone))
-        return http_respond_error(res, 400, "name and phone are required");
+        !field(req->body, "whatsapp", raw_phone, sizeof raw_phone) ||
+        !field(req->body, "password", password, sizeof password))
+        return http_respond_error(res, 400, "name, phone and password are required");
+    if (!validation_length_between(password, 8, 127))
+        return http_respond_error(res, 400, "invalid password length");
     if (!field(req->body, "email", email, sizeof email)) email[0] = '\0';
     if (!canonical_phone(raw_phone, phone, sizeof phone))
         return http_respond_error(res, 400, "invalid phone");
@@ -82,7 +86,7 @@ int ctrl_teachers_create(const HttpRequest *req, HttpResponse *res)
         return http_respond_error(res, 400, "invalid email");
     if (db_begin() != SUCCESS) return http_respond_error(res, 500, "database error");
     User user;
-    rc = users_create(name, phone, USER_TYPE_PROF, NULL, &user);
+    rc = users_create(name, phone, USER_TYPE_PROF, password, &user);
     if (rc == ERROR_ALREADY_EXISTS) {
         (void)db_rollback();
         return http_respond_error(res, 409, "phone already registered");

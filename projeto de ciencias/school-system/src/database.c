@@ -12,6 +12,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <io.h>
+#define chmod _chmod
+#else
+#include <sys/stat.h>
+#endif
 
 /* ===================== estado global ============================== */
 
@@ -342,6 +348,10 @@ int database_init(const char *path)
     pthread_once(&g_db_once, init_key);
     strncpy(g_path, path, sizeof g_path - 1);
     g_path[sizeof g_path - 1] = '\0';
+#if !defined(_WIN32)
+    /* Restringe também bancos existentes sem alterar seus dados. */
+    (void)chmod(g_path, 0600);
+#endif
 
     /* Abre uma conexão para o bootstrap (pode falhar). */
     sqlite3 *db = open_connection(g_path);

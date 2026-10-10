@@ -1,9 +1,14 @@
 #include "cli.h"
 #include "error.h"
+#include "escola_api.h"
+#include "ai.h"
+#include "config.h"
+#include "validation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <locale.h>
 
 #if defined(_WIN32)
@@ -15,6 +20,7 @@
 #else
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #define close_socket close
 #endif
@@ -56,8 +62,11 @@ static void help_plain(void)
     puts("  sae turma criar|listar|editar|excluir|vincular");
     puts("TAREFAS (COORD e PROF)");
     puts("  sae tarefa criar|listar|editar|excluir");
-    puts("WHATSAPP (COORD e PROF)");
-    puts("  sae whatsapp enviar|turma");
+    puts("MENSAGENS (API escolar externa: somente resposta a mensagem recebida)");
+    puts("  sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM");
+    puts("  sae whatsapp turma -c ID_TURMA -m MENSAGEM (indisponível nesta API)");
+    puts("API ESCOLAR (somente whoami, inbox, reply e ref)");
+    puts("  sae escola whoami|inbox [-l LIMITE]|reply -i ID -m TEXTO|tutor -i ID -c TURMA -m PERGUNTA|ref");
     puts("Use SAE_UI=unicode para forçar o visual com molduras.");
 }
 
@@ -100,9 +109,20 @@ static void help(void)
     puts("│     sae tarefa excluir -i ID                                                │");
     puts("│     Alunos podem apenas listar tarefas da própria turma.                    │");
     puts("│                                                                             │");
-    puts("├─────────────────────── WHATSAPP (COORD e PROF) ─────────────────────────────┤");
-    puts("│     sae whatsapp enviar -p TELEFONE -m MENSAGEM                             │");
-    puts("│     sae whatsapp turma -c ID_TURMA -m MENSAGEM                              │");
+    puts("├─────────────── MENSAGENS (API ESCOLAR EXTERNA) ──────────────────────────────┤");
+    puts("│     sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM                          │");
+    puts("│     Responde uma mensagem recebida; o ID tem formato m_...                   │");
+    puts("│     sae whatsapp turma não está disponível: a API não oferece envio em massa.│");
+    puts("│     Requer ESCOLA_API_KEY configurada no ambiente local.                     │");
+    puts("│                                                                             │");
+    puts("├────────────────── API ESCOLAR (whoami, inbox, reply e ref) ─────────────────┤");
+    puts("│     sae escola whoami                                                      │");
+    puts("│     sae escola inbox [-l LIMITE]                                            │");
+    puts("│     sae escola reply -i ID_DA_INBOX -m MENSAGEM                             │");
+    puts("│     sae escola tutor -i ID -c ID_TURMA -m PERGUNTA                          │");
+    puts("│          IA tutora consulta tarefas da turma e responde ao ID da inbox.     │");
+    puts("│     sae escola ref                                                         │");
+    puts("│     Requer ESCOLA_API_KEY, AI_API_KEY e login SAE; chaves ficam no .env.    │");
     puts("│                                                                             │");
     puts("├─────────────────────────────── OPÇÕES ──────────────────────────────────────┤");
     puts("│                                                                             │");
@@ -133,6 +153,11 @@ static int json_text(const char *s, char *out, size_t cap)
 
 static int token_load(char *token, size_t cap)
 {
+#if defined(_WIN32)
+    (void)_chmod(SESSION_FILE, _S_IREAD | _S_IWRITE);
+#else
+    (void)chmod(SESSION_FILE, 0600);
+#endif
     FILE *f = fopen(SESSION_FILE, "r");
     if (!f) return 0;
     int ok = fgets(token, (int)cap, f) != NULL;
@@ -153,11 +178,28 @@ static int request(const char *method, const char *path, const char *body, char 
     if (connect(s, (struct sockaddr *)&a, sizeof a) < 0) { close_socket(s); return 0; }
     char token[80] = {0}, head[2048];
     token_load(token, sizeof token);
+    size_t body_len = strlen(body ? body : "");
     int n = snprintf(head, sizeof head,
-        "%s %s HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n%s%s%sConnection: close\r\n\r\n%s",
-        method, path, strlen(body ? body : ""), token[0] ? "Authorization: Bearer " : "",
-        token[0] ? token : "", token[0] ? "\r\n" : "", body ? body : "");
-    if (n < 0 || (size_t)n >= sizeof head || send(s, head, n, 0) != n) { close_socket(s); return 0; }
+        "%s %s HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n%s%s%sConnection: close\r\n\r\n",
+        method, path, body_len, token[0] ? "Authorization: Bearer " : "",
+        token[0] ? token : "", token[0] ? "\r\n" : "");
+    if (n < 0 || (size_t)n >= sizeof head) { close_socket(s); return 0; }
+    size_t sent = 0;
+    while (sent < (size_t)n) {
+        int chunk = (int)((size_t)n - sent);
+        int written = (int)send(s, head + sent, chunk, 0);
+        if (written <= 0) { close_socket(s); return 0; }
+        sent += (size_t)written;
+    }
+    const char *request_body = body ? body : "";
+    sent = 0;
+    while (sent < body_len) {
+        size_t remaining = body_len - sent;
+        int chunk = remaining > 16384 ? 16384 : (int)remaining;
+        int written = (int)send(s, request_body + sent, chunk, 0);
+        if (written <= 0) { close_socket(s); return 0; }
+        sent += (size_t)written;
+    }
     size_t used = 0;
     while (used + 1 < cap) { int r = (int)recv(s, response + used, cap - used - 1, 0); if (r <= 0) break; used += (size_t)r; }
     response[used] = '\0'; close_socket(s);
@@ -481,18 +523,99 @@ static int call(const char *method, const char *path, const char *body)
     return SUCCESS;
 }
 
+static int valid_positive_id(const char *value)
+{
+    if (!value || !*value) return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; ++p)
+        if (*p < '0' || *p > '9') return 0;
+    errno = 0;
+    char *end = NULL;
+    long parsed = strtol(value, &end, 10);
+    return errno != ERANGE && end && *end == '\0' && parsed > 0;
+}
+
+static int escola_tutor_reply(const char *message_id, const char *class_id,
+                              const char *question)
+{
+    if (!message_id || !valid_positive_id(class_id) || !question ||
+        !validation_length_between(question, 3, 800)) {
+        fputs("Use: sae escola tutor -i ID_DA_INBOX -c ID_TURMA -m PERGUNTA\n", stderr);
+        return ERROR_INVALID_INPUT;
+    }
+    AppConfig cfg;
+    if (config_load(&cfg) != SUCCESS || !ai_remote_enabled()) {
+        fputs("Configure AI_API_KEY, AI_MODEL e AI_API_URL no .env para usar a tutoria.\n", stderr);
+        return ERROR_CONFIG;
+    }
+
+    char path[128], tasks_json[65536];
+    int n = snprintf(path, sizeof path, "/api/tasks?class_id=%s", class_id);
+    if (n < 0 || (size_t)n >= sizeof path) return ERROR_TOO_LONG;
+    char token[80];
+    if (!token_load(token, sizeof token)) {
+        fputs("Faça login no SAE para consultar tarefas dessa turma.\n", stderr);
+        return ERROR_UNAUTHORIZED;
+    }
+    if (!request("GET", path, "", tasks_json, sizeof tasks_json)) {
+        fputs("Não foi possível consultar as tarefas no SAE. Inicie o servidor com: sae servidor\n", stderr);
+        return ERROR_NETWORK;
+    }
+    if (strstr(tasks_json, "\"error\":")) {
+        print_response(tasks_json);
+        return strstr(tasks_json, "\"error\":401") ? ERROR_UNAUTHORIZED : ERROR_HTTP;
+    }
+
+    char answer[4001];
+    int rc = ai_answer_student_question(question, tasks_json, answer, sizeof answer);
+    if (rc != SUCCESS || !answer[0]) {
+        print_error_message("A IA não conseguiu preparar uma resposta para essa pergunta.");
+        return rc == SUCCESS ? ERROR_AI : rc;
+    }
+    return escola_api_reply(message_id, answer);
+}
+
 int cli_run(int argc, char **argv)
 {
     if (argc < 2) { help(); return SUCCESS; }
     if (strcmp(argv[1], "servidor") == 0) return -1;
     if (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "ajuda")) { help(); return SUCCESS; }
+    if (!strcmp(argv[1], "escola") && argc >= 3) {
+        if (!strcmp(argv[2], "whoami") && argc == 3) return escola_api_whoami();
+        if (!strcmp(argv[2], "ref") && argc == 3) return escola_api_ref();
+        if (!strcmp(argv[2], "inbox")) {
+            const char *limit_arg = opt(argc, argv, "-l");
+            int limit = 20;
+            if (limit_arg) {
+                char *end = NULL;
+                long parsed = strtol(limit_arg, &end, 10);
+                if (!end || *end || parsed < 1 || parsed > 50) return ERROR_INVALID_INPUT;
+                limit = (int)parsed;
+            }
+            return escola_api_inbox(limit);
+        }
+        if (!strcmp(argv[2], "reply"))
+            return escola_api_reply(opt(argc, argv, "-i"), opt(argc, argv, "-m"));
+        if (!strcmp(argv[2], "tutor"))
+            return escola_tutor_reply(opt(argc, argv, "-i"), opt(argc, argv, "-c"),
+                                      opt(argc, argv, "-m"));
+        fprintf(stderr, "Use: sae escola whoami|inbox [-l LIMITE]|reply -i ID -m TEXTO|tutor -i ID -c TURMA -m PERGUNTA|ref\n");
+        return ERROR_INVALID_INPUT;
+    }
     const char *n = opt(argc, argv, "-n"), *p = opt(argc, argv, "-p"), *s = opt(argc, argv, "-s");
     const char *t = opt(argc, argv, "-t"), *c = opt(argc, argv, "-c"), *u = opt(argc, argv, "-u");
     const char *m = opt(argc, argv, "-m"), *v = opt(argc, argv, "-v"), *d = opt(argc, argv, "-d"), *g = opt(argc, argv, "-g"), *i = opt(argc, argv, "-i");
-    char a[128], b[128], secret[128], phone[32], message[4001], q[8192];
+    char a[128], b[128], secret[128], q[8192];
     if ((strcmp(argv[1], "-ca") == 0 || strcmp(argv[1], "--create-admin") == 0) && n && p && s) {
-        if (!json_text(n,a,sizeof a)||!json_text(p,b,sizeof b)||!json_text(s,secret,sizeof secret)) return ERROR_INVALID_INPUT;
-        snprintf(q,sizeof q,"{\"name\":\"%s\",\"phone\":\"%s\",\"password\":\"%s\"}",a,b,secret); return call("POST","/api/bootstrap",q);
+        const char *setup_key = getenv("SAE_BOOTSTRAP_KEY");
+        char key_json[256];
+        if (!setup_key || !*setup_key) {
+            fprintf(stderr, "Defina SAE_BOOTSTRAP_KEY no ambiente para criar o primeiro administrador.\n");
+            return ERROR_CONFIG;
+        }
+        if (!json_text(n,a,sizeof a)||!json_text(p,b,sizeof b)||!json_text(s,secret,sizeof secret)||
+            !json_text(setup_key,key_json,sizeof key_json)) return ERROR_INVALID_INPUT;
+        snprintf(q,sizeof q,"{\"name\":\"%s\",\"phone\":\"%s\",\"password\":\"%s\",\"bootstrap_key\":\"%s\"}",a,b,secret,key_json);
+        return call("POST","/api/bootstrap",q);
     }
     if (!strcmp(argv[1], "login") && p && s) {
         if (!json_text(p,a,sizeof a)||!json_text(s,b,sizeof b)) return ERROR_INVALID_INPUT;
@@ -565,16 +688,17 @@ int cli_run(int argc, char **argv)
         snprintf(a, sizeof a, "/api/tasks/%s", i);
         return call("DELETE", a, "");
     }
-    if (!strcmp(argv[1], "whatsapp") && argc > 2 && !strcmp(argv[2], "enviar") && p && m) {
-        if (!json_text(p, phone, sizeof phone) || !json_text(m, message, sizeof message))
-            return ERROR_INVALID_INPUT;
-        snprintf(q, sizeof q, "{\"phone\":\"%s\",\"message\":\"%s\"}", phone, message);
-        return call("POST", "/api/whatsapp/messages", q);
-    }
-    if (!strcmp(argv[1], "whatsapp") && argc > 2 && !strcmp(argv[2], "turma") && c && m) {
-        if (!json_text(m, message, sizeof message)) return ERROR_INVALID_INPUT;
-        snprintf(q, sizeof q, "{\"class_id\":%s,\"message\":\"%s\"}", c, message);
-        return call("POST", "/api/whatsapp/notify-class", q);
+    if (!strcmp(argv[1], "whatsapp") && argc >= 3) {
+        if (!strcmp(argv[2], "enviar") && i && m)
+            return escola_api_reply(i, m);
+        if (!strcmp(argv[2], "turma")) {
+            fputs("A API de mensagens atual só permite responder a um ID da inbox; "
+                  "ela não oferece envio por telefone nem envio para turma.\n", stderr);
+            return ERROR_NOT_IMPLEMENTED;
+        }
+        fputs("Use: sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM\n"
+              "O ID deve ser m_... e vir de `sae escola inbox`.\n", stderr);
+        return ERROR_INVALID_INPUT;
     }
     fprintf(stderr,"Comando incompleto ou desconhecido. Use: sae --help\n"); return ERROR_INVALID_INPUT;
 }
