@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAE · Status ao vivo</title>
+<meta name="description" content="O que está rodando agora no assistente da Escola Presbiteriana de Alta Floresta (9º ano A) e no sistema da equipe.">
+<style>
+  :root {
+    --fundo: #070b16;
+    --painel: rgba(17, 25, 46, .72);
+    --borda: rgba(120, 160, 255, .16);
+    --texto: #e8eefc;
+    --suave: #a9b6d3;
+    --apagado: #6f7d9c;
+    --ciano: #38e1ff;
+    --verde: #3ef0a1;
+    --roxo: #a78bfa;
+    --ambar: #ffc857;
+    --rosa: #ff6b9a;
+    --raio: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(56, 225, 255, .14), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(167, 139, 250, .14), transparent 60%),
+      linear-gradient(rgba(120, 160, 255, .045) 1px, transparent 1px) 0 0 / 44px 44px,
+      linear-gradient(90deg, rgba(120, 160, 255, .045) 1px, transparent 1px) 0 0 / 44px 44px,
+      var(--fundo);
+    color: var(--texto);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  main { max-width: 1320px; margin: 0 auto; padding: 28px 20px 40px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; margin-bottom: 26px; }
+  .marca { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--ciano), var(--roxo)); color: #071022; font-weight: 800; font-size: 18px;
+    box-shadow: 0 0 34px rgba(56, 225, 255, .35);
+  }
+  h1 { font-size: clamp(22px, 2.6vw, 32px); margin: 0; letter-spacing: -.02em; }
+  .sub { color: var(--suave); margin: 2px 0 0; }
+  .vivo { display: flex; align-items: center; gap: 10px; color: var(--suave); font-size: 14px; }
+  .ponto { width: 10px; height: 10px; border-radius: 50%; background: var(--verde); box-shadow: 0 0 0 0 rgba(62, 240, 161, .6); animation: pulso 2s infinite; }
+  .vivo.parado .ponto { background: var(--ambar); animation: none; }
+  @keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(62, 240, 161, .55); } 70% { box-shadow: 0 0 0 12px rgba(62, 240, 161, 0); } 100% { box-shadow: 0 0 0 0 rgba(62, 240, 161, 0); } }
+
+  .grade { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .painel {
+    background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio);
+    padding: 20px; backdrop-filter: blur(8px); position: relative; overflow: hidden;
+  }
+  .painel::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cor, var(--ciano)), transparent); opacity: .8;
+  }
+  .painel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--suave); margin: 0 0 4px; font-weight: 600; }
+  .painel .desc { color: var(--apagado); font-size: 13px; margin: 0 0 16px; }
+  .painel[hidden] { display: none; }
+  @media (min-width: 981px) { .s12 .metricas.seis { grid-template-columns: repeat(6, 1fr); } }
+  .s12 { grid-column: span 12; } .s8 { grid-column: span 8; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; }
+
+  .hero { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; }
+  .total { font-size: clamp(56px, 8vw, 104px); font-weight: 800; line-height: .95; letter-spacing: -.04em;
+    background: linear-gradient(120deg, #fff, var(--ciano) 55%, var(--roxo)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .total-rot { color: var(--suave); margin-top: 6px; }
+
+  .barras { display: flex; align-items: flex-end; gap: 8px; height: 150px; }
+  .barra { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+  .barra .col {
+    width: 100%; min-height: 3px; border-radius: 7px 7px 3px 3px;
+    background: linear-gradient(180deg, var(--ciano), rgba(56, 225, 255, .18));
+    box-shadow: 0 0 18px rgba(56, 225, 255, .25); transition: height .8s cubic-bezier(.2, .8, .2, 1);
+  }
+  .barra:last-child .col { background: linear-gradient(180deg, var(--verde), rgba(62, 240, 161, .2)); box-shadow: 0 0 22px rgba(62, 240, 161, .35); }
+  .barra span { font-size: 11px; color: var(--apagado); }
+  .barra b { font-size: 12px; color: var(--suave); font-weight: 600; }
+
+  .metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .metricas.seis { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 560px) { .metricas.seis { grid-template-columns: repeat(2, 1fr); } }
+  .m { background: rgba(255, 255, 255, .025); border: 1px solid rgba(255, 255, 255, .05); border-radius: 13px; padding: 14px 14px 12px; }
+  .m .v { font-size: clamp(26px, 3vw, 38px); font-weight: 750; letter-spacing: -.02em; line-height: 1.05; transition: color .4s; }
+  .m .r { color: var(--suave); font-size: 13px; margin-top: 4px; }
+  .m.mudou .v { color: var(--verde); }
+  .c-ciano { color: var(--ciano); } .c-verde { color: var(--verde); } .c-roxo { color: var(--roxo); }
+  .c-ambar { color: var(--ambar); } .c-rosa { color: var(--rosa); }
+
+  .topo-equipe { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .estado { flex: none; display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .14); font-size: 14px; font-weight: 700; color: var(--apagado); }
+  .estado i { width: 11px; height: 11px; border-radius: 50%; background: currentColor; }
+  .estado.ok { color: var(--verde); border-color: rgba(62, 240, 161, .45); background: rgba(62, 240, 161, .08); }
+  .estado.ok i { animation: pulso 2s infinite; }
+  .estado.alerta { color: var(--ambar); border-color: rgba(255, 200, 87, .45); background: rgba(255, 200, 87, .08); }
+  .divisao { margin-top: 1.2vh; }
+  .trilha { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: rgba(255, 255, 255, .06); }
+  .trilha i { display: block; height: 100%; width: 0; transition: width 1s cubic-bezier(.2, .8, .2, 1); }
+  #div-equipe { background: linear-gradient(90deg, #ffb347, var(--ambar)); box-shadow: 0 0 14px rgba(255, 200, 87, .45); }
+  #div-cidades { background: linear-gradient(90deg, var(--ciano), #4f8bff); }
+  .legenda { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; color: var(--suave); font-size: 13px; }
+  .legenda b { color: var(--texto); }
+  .bola { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  .bola.equipe { background: var(--ambar); } .bola.cidades { background: var(--ciano); }
+  .zap-qr { background: #fff; border-radius: 14px; padding: 8px; width: min(190px, 100%); margin: 2px auto 8px; box-shadow: 0 0 24px rgba(62, 240, 161, .25); }
+  .zap-qr img { display: block; width: 100%; height: auto; }
+  .zap-num { text-align: center; font-weight: 700; font-size: 16px; margin: 0 0 10px; letter-spacing: .02em; }
+  .zap-num small { display: block; font-weight: 400; font-size: 12px; color: var(--suave); letter-spacing: 0; }
+  #painel-zap .metricas.zap-pessoas { grid-template-columns: 1fr 1fr; }
+  .linha-equipe { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--suave); font-size: 14px; }
+  .tag { padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; border: 1px solid; }
+  .tag.ok { color: var(--verde); border-color: rgba(62, 240, 161, .4); background: rgba(62, 240, 161, .08); }
+  .tag.quieto { color: var(--apagado); border-color: rgba(255, 255, 255, .12); }
+
+  .motor { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1.5fr; gap: 18px; align-items: center; }
+  .velo { position: relative; text-align: center; }
+  .velo svg { width: 100%; max-width: 300px; display: block; margin: 0 auto; overflow: visible; }
+  .velo .trilho { fill: none; stroke: rgba(255, 255, 255, .07); stroke-width: 14; stroke-linecap: round; }
+  .velo .arco { fill: none; stroke-width: 14; stroke-linecap: round; filter: drop-shadow(0 0 8px rgba(56, 225, 255, .35)); transition: stroke-dasharray 1s cubic-bezier(.2, .8, .2, 1); }
+  .velo .risco { stroke: rgba(255, 255, 255, .22); stroke-width: 2; }
+  .velo .risco.grande { stroke: rgba(255, 255, 255, .45); }
+  .velo .escala { fill: var(--apagado); font-size: 10px; text-anchor: middle; }
+  .velo #agulha { transform-origin: 150px 140px; transition: transform 1s cubic-bezier(.3, 1.4, .5, 1); }
+  .velo #agulha line { stroke: #fff; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 6px rgba(255, 255, 255, .6)); }
+  .velo #agulha circle { fill: #fff; }
+  .velo-valor { margin-top: -6px; font-size: clamp(30px, 3.4vw, 44px); font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .velo-valor small { font-size: 15px; font-weight: 600; color: var(--suave); margin-left: 4px; }
+  .velo-rot { color: var(--suave); font-size: 13px; margin-top: 4px; }
+  .anel { text-align: center; }
+  .anel svg { width: 132px; height: 132px; display: block; margin: 0 auto; }
+  .anel .fundo-anel { fill: none; stroke: rgba(255, 255, 255, .07); stroke-width: 10; }
+  .anel .cheio { fill: none; stroke-width: 10; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 60px 60px; transition: stroke-dasharray 1s cubic-bezier(.2, .8, .2, 1), stroke .4s; }
+  .anel text { fill: var(--texto); font-size: 22px; font-weight: 800; text-anchor: middle; dominant-baseline: central; }
+  .anel .r { color: var(--suave); font-size: 13px; margin-top: 6px; }
+  .leituras { display: grid; gap: 8px; }
+  .linha-srv { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 12px; border-radius: 11px; background: rgba(255, 255, 255, .025); border: 1px solid rgba(255, 255, 255, .05); }
+  .linha-srv span { color: var(--suave); font-size: 13px; }
+  .linha-srv b { font-size: 17px; font-weight: 700; white-space: nowrap; }
+  .spark { width: 100%; height: 46px; display: block; margin-top: 4px; }
+  .spark polyline { fill: none; stroke: var(--ciano); stroke-width: 2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 4px rgba(56, 225, 255, .5)); }
+  .spark polygon { fill: url(#spark-grad); }
+  .spark-rot { color: var(--apagado); font-size: 11px; text-align: right; }
+  @media (max-width: 980px) { .motor { grid-template-columns: 1fr 1fr; } .velo, .leituras { grid-column: span 2; } }
+  @media (max-width: 400px) { .anel svg { width: 112px; height: 112px; } }
+
+  #painel-tec { display: flex; flex-direction: column; }
+  .ias { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; flex: 1; min-height: 0; grid-auto-rows: 1fr; }
+  .ias li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .06); min-height: 0; }
+  .ias li > div { flex: 1; min-width: 0; }
+  .ias b { display: block; font-size: 15px; }
+  .ias small { display: block; color: var(--suave); font-size: 12.5px; line-height: 1.3; }
+  .logo-tec { flex: none; width: 30px; height: 30px; background: var(--c, #fff); -webkit-mask: var(--i) center / contain no-repeat; mask: var(--i) center / contain no-repeat; }
+  .logo-tec.gemini { background: linear-gradient(135deg, #4285f4, #9b72cb 55%, #d96570); }
+  .logo-tec.letra { -webkit-mask: none; mask: none; background: rgba(167, 139, 250, .16); color: var(--roxo); border-radius: 5px; display: inline-grid; place-items: center; font-weight: 800; font-style: normal; font-size: 12px; }
+  .quem { flex: none; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; border: 1px solid rgba(56, 225, 255, .35); background: rgba(56, 225, 255, .08); color: var(--suave); white-space: nowrap; }
+  .quem.equipe { border-color: rgba(255, 200, 87, .45); background: rgba(255, 200, 87, .08); color: var(--ambar); }
+  footer .tec { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px; padding-top: 12px; border-top: 1px solid var(--borda); }
+  footer .grupo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+  footer .rot { color: var(--apagado); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
+  footer .t { display: inline-flex; align-items: center; gap: 6px; color: var(--suave); font-size: 13px; white-space: nowrap; }
+  footer .t .logo-tec { width: 16px; height: 16px; }
+  footer .linha { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-top: 10px; }
+  footer { margin-top: 22px; color: var(--apagado); font-size: 13px; }
+  footer a { color: var(--suave); }
+
+  @media (max-width: 980px) { .s8, .s4, .s6 { grid-column: span 12; } .hero { grid-template-columns: 1fr; } }
+  @media (min-width: 1500px) and (min-height: 820px) {
+    body { font-size: 16px; }
+    main { max-width: none; height: 100vh; display: flex; flex-direction: column; padding: 2vh 32px 1.4vh; }
+    header { margin-bottom: 1.6vh; }
+    footer { margin-top: 1.2vh; }
+    .grade { flex: 1; min-height: 0; grid-template-rows: 1.25fr 1.15fr .7fr; gap: 1.6vh 18px; }
+    .painel { display: flex; flex-direction: column; min-height: 0; padding: 1.8vh 22px; }
+    .painel .desc { margin-bottom: 1.2vh; }
+    #painel-equipe { order: 1; grid-column: span 5; }
+    #painel-hero { order: 2; grid-column: span 4; }
+    #painel-tec { order: 3; grid-column: span 3; }
+    #painel-pedidos { order: 4; grid-column: span 4; }
+    #painel-servidor { order: 5; grid-column: span 6; }
+    #painel-zap { order: 6; grid-column: span 2; }
+    #painel-web { order: 7; grid-column: span 12; }
+    #painel-zap .metricas.zap-pessoas { grid-template-columns: 1fr 1fr; flex: 0 0 auto; }
+    #painel-zap .metricas.zap-pessoas { display: flex; justify-content: center; gap: 14px; flex-wrap: nowrap; }
+    #painel-zap .zap-pessoas .m { padding: 0; background: none; border: 0; flex-direction: row; justify-content: center; align-items: baseline; gap: 5px; }
+    #painel-zap .zap-pessoas .m .v { font-size: clamp(18px, 2.4vh, 32px); line-height: 1; }
+    #painel-zap .zap-pessoas .m { flex: 0 0 auto; white-space: nowrap; min-height: auto; }
+    #painel-zap .zap-pessoas .m .r { font-size: 12px; margin: 0; }
+    .zap-qr { width: min(15vh, 100%); padding: .6vh; margin: 0 auto .6vh; }
+    .zap-num { margin-bottom: .4vh; font-size: 15px; line-height: 1.25; }
+    #painel-web .metricas.seis { grid-template-columns: repeat(6, 1fr); }
+    .metricas.quatro { grid-template-columns: repeat(4, 1fr); }
+    .hero { flex: 1; min-height: 0; gap: 20px; }
+    .barras { height: 100%; min-height: 80px; gap: 5px; }
+    .total { font-size: clamp(72px, 9vh, 150px); }
+    .metricas { flex: 1; min-height: 0; grid-auto-rows: 1fr; gap: 1.1vh 12px; }
+    .m { display: flex; flex-direction: column; justify-content: center; padding: .9vh 14px; min-height: 0; }
+    .m .v { font-size: clamp(28px, 4.4vh, 60px); }
+    .m .r { font-size: 12.5px; margin-top: 2px; }
+    .motor { flex: 1; min-height: 0; grid-template-columns: 1.3fr .9fr .9fr 1.5fr; }
+    .anel svg { width: min(15vh, 100%); height: auto; }
+    .velo svg { max-width: min(320px, 30vh); }
+    .velo-valor { font-size: clamp(28px, 4.4vh, 48px); }
+    .linha-srv { padding: .8vh 12px; }
+    .spark { height: 4vh; }
+    .ias { gap: .8vh; }
+    .ias li { padding: .6vh 10px; }
+    .ias small { font-size: 12px; }
+  }
+  @media (min-width: 1500px) and (min-height: 820px) and (max-height: 999px) {
+    .painel h2 { font-size: 12px; }
+    .painel .desc { font-size: 12px; margin-bottom: .7vh; }
+    .ias b { font-size: 14px; }
+    .ias small { font-size: 11px; line-height: 1.2; }
+    .m .r { font-size: 11.5px; line-height: 1.25; }
+    .linha-srv { padding: .5vh 10px; }
+    .zap-qr { width: min(12.5vh, 100%); }
+    .zap-num small { font-size: 11px; }
+    .velo-rot, .anel .r { font-size: 12px; margin-top: 2px; }
+    footer .t { font-size: 12px; }
+    .leituras { gap: 5px; }
+    .motor { grid-template-columns: 1.1fr .75fr .75fr 1.8fr; gap: 12px; }
+    .linha-srv span { font-size: 12px; }
+    .linha-srv b { font-size: 15px; }
+    .spark { height: 3vh; margin-top: 0; }
+    .spark-rot { font-size: 10px; }
+    .velo svg { max-width: min(300px, 27vh); }
+    .anel svg { width: min(13vh, 100%); }
+  }
+  @media (prefers-reduced-motion: reduce) { .ponto { animation: none; } .barra .col, .velo .arco, .velo #agulha, .anel .cheio { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="marca">
+      <div class="logo" aria-hidden="true">SAE</div>
+      <div>
+        <h1>Status ao vivo</h1>
+        <p class="sub">Escola Presbiteriana de Alta Floresta · 9º ano A · Feira de Ciências 2026</p>
+      </div>
+    </div>
+    <div class="vivo" id="vivo"><span class="ponto"></span><span id="quando">conectando…</span></div>
+  </header>
+
+  <section class="grade">
+    <article class="painel s12" id="painel-equipe" style="--cor: var(--ambar)">
+      <div class="topo-equipe">
+        <div>
+          <h2>SAE da equipe · sistema local (principal)</h2>
+          <p class="desc">Roda no computador da equipe e responde o WhatsApp da escola pela internet.</p>
+        </div>
+        <span class="estado" id="equipe-estado"><i></i><span id="equipe-tag">sem contato hoje</span></span>
+      </div>
+      <div class="metricas quatro">
+        <div class="m" data-k="rota_equipe"><div class="v num c-ambar">0</div><div class="r">mensagens para a equipe hoje</div></div>
+        <div class="m" data-k="leituras"><div class="v num c-ambar">0</div><div class="r">mensagens buscadas · 24 h</div></div>
+        <div class="m" data-k="respostas"><div class="v num c-verde">0</div><div class="r">respostas enviadas · 24 h</div></div>
+        <div class="m" data-k="entregas_webhook"><div class="v num c-ciano">0</div><div class="r">entregues direto ao sistema local · 24 h</div></div>
+      </div>
+      <div class="divisao" aria-label="Quem atendeu hoje">
+        <div class="trilha"><i id="div-equipe"></i><i id="div-cidades"></i></div>
+        <div class="legenda"><span><i class="bola equipe"></i>equipe <b class="num" id="div-equipe-n">0</b></span><span id="equipe-quando"></span><span><i class="bola cidades"></i>reserva online <b class="num" id="div-cidades-n">0</b></span></div>
+      </div>
+    </article>
+
+    <article class="painel s12" id="painel-hero" style="--cor: var(--ciano)">
+      <div class="topo-equipe">
+        <div>
+          <h2>Reserva online</h2>
+          <p class="desc" id="reserva-desc">Responde quem não está no sistema local.</p>
+        </div>
+        <span class="estado" id="modo-tag"><i></i><span id="modo-texto">—</span></span>
+      </div>
+      <div class="hero">
+        <div>
+          <div class="total num" id="total">0</div>
+          <div class="total-rot">respostas desde a meia-noite</div>
+        </div>
+        <div class="barras" id="barras" role="img" aria-label="Atendimentos por hora nas últimas 12 horas"></div>
+      </div>
+    </article>
+
+    <article class="painel s8" id="painel-pedidos" style="--cor: var(--roxo)">
+      <h2>O que o assistente atendeu</h2>
+      <p class="desc">Hoje, por tipo de pedido. O que foi para o sistema da equipe conta no quadro dela.</p>
+      <div class="metricas seis">
+        <div class="m" data-k="duvida"><div class="v num c-ciano">0</div><div class="r">dúvidas de tarefa</div></div>
+        <div class="m" data-k="foto"><div class="v num c-roxo">0</div><div class="r">fotos de tarefa lidas</div></div>
+        <div class="m" data-k="continuacao"><div class="v num c-verde">0</div><div class="r">pedidos para explicar de novo</div></div>
+        <div class="m" data-k="horario"><div class="v num c-ambar">0</div><div class="r">horários, tarefas e avisos</div></div>
+        <div class="m" data-k="conversa"><div class="v num">0</div><div class="r">oi e obrigado</div></div>
+        <div class="m" data-k="barrado"><div class="v num c-rosa">0</div><div class="r">pedidos barrados ou fora do tema</div></div>
+      </div>
+    </article>
+
+    <article class="painel s4" id="painel-zap" style="--cor: var(--verde)">
+      <h2>WhatsApp da escola</h2>
+      <div class="zap-qr"><img src="img/zap-escola.svg" alt="QR code para conversar com o WhatsApp da escola" /></div>
+      <p class="zap-num"><span class="num">(66) 99669-5016</span><small>aponte a câmera do celular</small></p>
+      <div class="metricas zap-pessoas">
+        <div class="m" data-k="pessoas_hoje"><div class="v num c-verde">0</div><div class="r">pessoas hoje</div></div>
+        <div class="m" data-k="pessoas_total"><div class="v num">0</div><div class="r">no total</div></div>
+      </div>
+    </article>
+
+    <article class="painel s12" id="painel-web" style="--cor: var(--rosa)">
+      <h2>SAE na web</h2>
+      <p class="desc">O que a coordenação e os professores cadastraram na versão online.</p>
+      <div class="metricas seis">
+        <div class="m" data-k="turmas"><div class="v num">0</div><div class="r">turmas</div></div>
+        <div class="m" data-k="professores"><div class="v num">0</div><div class="r">professores</div></div>
+        <div class="m" data-k="alunos"><div class="v num">0</div><div class="r">alunos</div></div>
+        <div class="m" data-k="tarefas"><div class="v num c-ciano">0</div><div class="r">tarefas ativas</div></div>
+        <div class="m" data-k="avisos"><div class="v num c-roxo">0</div><div class="r">avisos</div></div>
+        <div class="m" data-k="sessoes_abertas"><div class="v num c-verde">0</div><div class="r">pessoas usando agora</div></div>
+      </div>
+    </article>
+
+    <article class="painel s12" id="painel-tec" style="--cor: var(--roxo)">
+      <h2>Modelos de IA nas respostas</h2>
+      <ul class="ias">
+        <li><span class="logo-tec gemini" style="--i: url(img/tec/googlegemini.svg)"></span><div><b>Gemini 3.8 Flash</b><small>lê a foto da tarefa; se falhar, entra o Gemini 3.1 Flash-Lite</small></div><span class="quem">reserva</span></li>
+        <li><span class="logo-tec" style="--i: url(img/tec/googlecloud.svg); --c: #4285f4"></span><div><b>Google Cloud Vision</b><small>barra foto imprópria antes de qualquer IA ver</small></div><span class="quem">reserva</span></li>
+        <li><span class="logo-tec" style="--i: url(img/tec/deepseek.svg); --c: #6e8bff"></span><div><b>DeepSeek V4 Flash</b><small>conversa, orienta sem dar a resposta e revisa cada resposta</small></div><span class="quem">reserva</span></li>
+        <li><span class="logo-tec" style="--i: url(img/tec/claude.svg); --c: #d97757"></span><div><b>Claude</b><small>Anthropic · a IA do sistema da equipe</small></div><span class="quem equipe">equipe da feira</span></li>
+      </ul>
+    </article>
+
+    <article class="painel s12" id="painel-servidor" style="--cor: var(--ciano)">
+      <h2>Servidor da reserva</h2>
+      <p class="desc">O computador que responde o zap e esta tela, medido agora.</p>
+      <div class="motor">
+        <div class="velo">
+          <svg viewBox="0 0 300 160" role="img" aria-labelledby="velo-desc">
+            <title id="velo-desc">Velocímetro do tempo de resposta da API</title>
+            <defs>
+              <linearGradient id="velo-grad" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0" stop-color="#3ef0a1"/><stop offset=".45" stop-color="#38e1ff"/><stop offset=".72" stop-color="#ffc857"/><stop offset="1" stop-color="#ff6b9a"/>
+              </linearGradient>
+            </defs>
+            <path class="trilho" d="M40 140 A110 110 0 0 1 260 140"/>
+            <path class="arco" id="velo-arco" d="M40 140 A110 110 0 0 1 260 140" pathLength="100" stroke="url(#velo-grad)" stroke-dasharray="0 100"/>
+            <g id="velo-riscos"></g>
+            <g id="agulha" style="transform: rotate(-90deg)"><line x1="150" y1="140" x2="150" y2="48"/><circle cx="150" cy="140" r="8"/></g>
+          </svg>
+          <div class="velo-valor num" id="lat">—<small>ms</small></div>
+          <div class="velo-rot">tempo de resposta (ms = milésimos de segundo)</div>
+        </div>
+        <div class="anel" data-anel="cpu">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="fundo-anel" cx="60" cy="60" r="48"/><circle class="cheio" cx="60" cy="60" r="48" pathLength="100" stroke-dasharray="0 100"/><text x="60" y="60" class="num">—</text></svg>
+          <div class="r">uso do processador</div>
+        </div>
+        <div class="anel" data-anel="memoria">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="fundo-anel" cx="60" cy="60" r="48"/><circle class="cheio" cx="60" cy="60" r="48" pathLength="100" stroke-dasharray="0 100"/><text x="60" y="60" class="num">—</text></svg>
+          <div class="r">uso da memória</div>
+        </div>
+        <div class="leituras">
+          <div class="linha-srv"><span>ligado sem parar há</span><b class="num" id="srv-up">—</b></div>
+          <div class="linha-srv"><span>resposta média · 5 min</span><b class="num" id="srv-media">—</b></div>
+          <svg class="spark" viewBox="0 0 200 46" preserveAspectRatio="none" aria-hidden="true">
+            <defs><linearGradient id="spark-grad" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="rgba(56,225,255,.35)"/><stop offset="1" stop-color="rgba(56,225,255,0)"/></linearGradient></defs>
+            <polygon id="spark-area" points=""/><polyline id="spark-linha" points=""/>
+          </svg>
+          <div class="spark-rot">tempo de resposta nos últimos 5 minutos</div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <footer>
+    <div class="tec">
+      <div class="grupo"><span class="rot">SAE da equipe</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/c.svg); --c: #a8b9cc"></i>Linguagem C (C11)</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/sqlite.svg); --c: #5ba3d0"></i>SQLite</span>
+        <span class="t"><i class="logo-tec letra">µ</i>libmicrohttpd</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/curl.svg); --c: #4fb3e8"></i>libcurl</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/openssl.svg); --c: #e4796b"></i>OpenSSL</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/bootstrap.svg); --c: #a27ef0"></i>Bootstrap 5.3</span>
+      </div>
+      <div class="grupo"><span class="rot">Infraestrutura da reserva</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/nodedotjs.svg); --c: #5fa04e"></i>Node.js 24</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/express.svg); --c: #e8eefc"></i>Express</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/postgresql.svg); --c: #6d95f0"></i>PostgreSQL 17</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/redis.svg); --c: #ff4438"></i>Redis 8</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/nginx.svg); --c: #2fbf62"></i>nginx</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/whatsapp.svg); --c: #25d366"></i>WhatsApp Cloud API</span>
+        <span class="t"><i class="logo-tec" style="--i: url(img/tec/claude.svg); --c: #d97757"></i>Claude Code · Claude Opus 5.5</span>
+      </div>
+    </div>
+    <div class="linha">
+      <span>Só números agregados — nenhum nome, telefone ou mensagem aparece aqui.</span>
+      <span>SAE criado pela equipe da Feira de Ciências 2026 · <a href="index.html">entrar</a></span>
+    </div>
+  </footer>
+</main>
+
+<script>
+(function () {
+  var base = (function () { try { return localStorage.getItem('saeStatusApiUrl'); } catch (_) { return null; } })()
+    || 'https://api.cidades.io/api/escola/v1/sae';
+  var URL_STATUS = base + '/status';
+  var atual = {};
+  var reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+
+  function anima(el, de, para) {
+    if (reduzir || de === para) { el.textContent = fmt(para); return; }
+    var t0 = performance.now(), dur = 900;
+    function passo(t) {
+      var p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(Math.round(de + (para - de) * e));
+      if (p < 1) requestAnimationFrame(passo);
+    }
+    requestAnimationFrame(passo);
+  }
+
+  function poe(chave, valor) {
+    var caixa = document.querySelector('[data-k="' + chave + '"]');
+    if (!caixa) return;
+    var el = caixa.querySelector('.v');
+    var antes = atual[chave];
+    anima(el, antes == null ? 0 : antes, valor || 0);
+    if (antes != null && valor > antes) {
+      caixa.classList.add('mudou');
+      setTimeout(function () { caixa.classList.remove('mudou'); }, 1600);
+    }
+    atual[chave] = valor || 0;
+  }
+
+  function barras(serie) {
+    var alvo = document.getElementById('barras');
+    var max = Math.max(1, Math.max.apply(null, serie.map(function (x) { return x.total; })));
+    if (alvo.children.length !== serie.length) {
+      alvo.innerHTML = serie.map(function () { return '<div class="barra"><b class="num">0</b><div class="col"></div><span></span></div>'; }).join('');
+    }
+    serie.forEach(function (x, i) {
+      var b = alvo.children[i];
+      b.querySelector('.col').style.height = Math.max(2, Math.round((x.total / max) * 100)) + '%';
+      b.querySelector('b').textContent = x.total ? fmt(x.total) : '';
+      b.querySelector('span').textContent = x.hora;
+    });
+  }
+
+  function haQuanto(iso) {
+    if (!iso) return '';
+    var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 60) return 'agora mesmo';
+    if (s < 3600) return 'há ' + Math.round(s / 60) + ' min';
+    return 'há ' + Math.round(s / 3600) + ' h';
+  }
+
+  function desenha(d) {
+    var a = d.assistente || {}, e = d.equipe || {}, w = d.sae_web || {}, z = d.whatsapp || {};
+    var totalEl = document.getElementById('total');
+    anima(totalEl, atual.__total || 0, a.total || 0); atual.__total = a.total || 0;
+    barras(a.por_hora || []);
+    poe('duvida', a.duvida); poe('foto', a.foto);
+    poe('continuacao', (a.seguimento || 0) + (a.palpite || 0));
+    poe('horario', a.horario);
+    poe('conversa', (a.saudacao || 0) + (a.agradecimento || 0));
+    poe('barrado', (a.fora || 0) + (a.provocacao || 0) + (a.limite || 0));
+    poe('pessoas_hoje', z.pessoas_hoje); poe('pessoas_total', z.pessoas_total);
+    poe('leituras', e.leituras); poe('respostas', e.respostas); poe('entregas_webhook', e.entregas_webhook);
+    ['turmas', 'professores', 'alunos', 'tarefas', 'avisos', 'sessoes_abertas'].forEach(function (k) { poe(k, w[k]); });
+
+    var r = d.rotas || {}, re = r.equipe || 0, rc = r.cidades || 0, soma = re + rc;
+    poe('rota_equipe', re);
+    document.getElementById('div-equipe').style.width = (soma ? re / soma * 100 : 0) + '%';
+    document.getElementById('div-cidades').style.width = (soma ? rc / soma * 100 : 0) + '%';
+    document.getElementById('div-equipe-n').textContent = fmt(re);
+    document.getElementById('div-cidades-n').textContent = fmt(rc);
+
+    var mr = d.modo_resposta || {}, assumiu = mr.quem_responde_agora === 'cidades';
+    var MODOS = {
+      equipe: ['modo: sistema local', 'Responde quem não está no sistema local.'],
+      auto: ['modo: automático', 'Responde quem não está no sistema local — e assume tudo se ele ficar sem sinal.'],
+      cidades: ['reserva no comando', 'Está respondendo todo mundo agora; o sistema local fica de fora.']
+    };
+    var md = MODOS[mr.modo];
+    if (md) {
+      document.getElementById('modo-texto').textContent = (mr.modo === 'auto' && assumiu) ? 'automático: reserva assumiu' : md[0];
+      document.getElementById('reserva-desc').textContent = (mr.modo === 'auto' && assumiu) ? 'O sistema local está sem sinal; a reserva está respondendo todo mundo.' : md[1];
+      document.getElementById('modo-tag').className = 'estado ' + (assumiu ? 'alerta' : 'ok');
+    }
+
+    var recente = e.ultimo_contato && (Date.now() - new Date(e.ultimo_contato).getTime()) < 15 * 60 * 1000;
+    document.getElementById('equipe-estado').className = 'estado ' + (recente ? 'ok' : (e.ultimo_contato ? 'alerta' : ''));
+    document.getElementById('equipe-tag').textContent = recente ? 'no ar' : (e.ultimo_contato ? 'sem sinal agora' : 'sem contato hoje');
+    document.getElementById('equipe-quando').textContent = e.ultimo_contato ? 'último contato ' + haQuanto(e.ultimo_contato) : '';
+  }
+
+  var VELO_MAX = 800, historico = [];
+
+  function cor(p, limites) {
+    return p < limites[0] ? 'var(--verde)' : p < limites[1] ? 'var(--ciano)' : p < limites[2] ? 'var(--ambar)' : 'var(--rosa)';
+  }
+
+  function riscos() {
+    var g = document.getElementById('velo-riscos'), html = '';
+    for (var v = 0; v <= VELO_MAX; v += 100) {
+      var a = Math.PI * (1 - v / VELO_MAX), c = Math.cos(a), s = Math.sin(a), grande = v % 200 === 0;
+      var r1 = grande ? 90 : 95, r2 = 101;
+      html += '<line class="risco' + (grande ? ' grande' : '') + '" x1="' + (150 + r1 * c).toFixed(1) + '" y1="' + (140 - r1 * s).toFixed(1) + '" x2="' + (150 + r2 * c).toFixed(1) + '" y2="' + (140 - r2 * s).toFixed(1) + '"/>';
+      if (grande) html += '<text class="escala" x="' + (150 + 74 * c).toFixed(1) + '" y="' + (144 - 74 * s).toFixed(1) + '">' + (v === VELO_MAX ? v + '+' : v) + '</text>';
+    }
+    g.innerHTML = html;
+  }
+
+  function velocimetro(ms) {
+    var p = Math.max(0, Math.min(1, ms / VELO_MAX));
+    document.getElementById('agulha').style.transform = 'rotate(' + (-90 + 180 * p).toFixed(1) + 'deg)';
+    document.getElementById('velo-arco').setAttribute('stroke-dasharray', (p * 100).toFixed(1) + ' 100');
+    var el = document.getElementById('lat');
+    el.firstChild.nodeValue = fmt(Math.round(ms));
+    el.style.color = cor(ms, [250, 450, 650]);
+  }
+
+  function anel(nome, pct) {
+    var caixa = document.querySelector('[data-anel="' + nome + '"]');
+    if (!caixa) return;
+    var ok = typeof pct === 'number';
+    var c = caixa.querySelector('.cheio');
+    c.setAttribute('stroke-dasharray', (ok ? pct : 0) + ' 100');
+    c.style.stroke = ok ? cor(pct, [50, 70, 85]) : 'transparent';
+    caixa.querySelector('text').textContent = ok ? pct + '%' : '—';
+  }
+
+  function tempoNoAr(s) {
+    if (typeof s !== 'number') return '—';
+    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+    return d >= 1 ? d + (d === 1 ? ' dia' : ' dias') + (h ? ' e ' + h + ' h' : '') : h >= 1 ? h + ' h' : Math.max(1, Math.round(s / 60)) + ' min';
+  }
+
+  function faisca() {
+    var n = historico.length;
+    if (n < 2) return;
+    var teto = Math.max(40, Math.max.apply(null, historico) * 1.3);
+    var pts = historico.map(function (v, i) { return (i * 200 / 29).toFixed(1) + ',' + (44 - (v / teto) * 40).toFixed(1); });
+    var ultimoX = ((n - 1) * 200 / 29).toFixed(1);
+    document.getElementById('spark-linha').setAttribute('points', pts.join(' '));
+    document.getElementById('spark-area').setAttribute('points', '0,46 ' + pts.join(' ') + ' ' + ultimoX + ',46');
+  }
+
+  function servidor(s, ms) {
+    velocimetro(ms);
+    historico.push(ms); if (historico.length > 30) historico.shift();
+    faisca();
+    s = s || {};
+    anel('cpu', s.cpu); anel('memoria', s.memoria);
+    var media = historico.reduce(function (a, b) { return a + b; }, 0) / historico.length;
+    document.getElementById('srv-media').textContent = fmt(Math.round(media)) + ' ms';
+    document.getElementById('srv-up').textContent = tempoNoAr(s.no_ar_s);
+  }
+
+  function marca(ok) {
+    var v = document.getElementById('vivo');
+    v.classList.toggle('parado', !ok);
+    document.getElementById('quando').textContent = ok
+      ? 'ao vivo · atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : 'sem conexão — tentando de novo';
+  }
+
+  function busca() {
+    var t0 = performance.now();
+    fetch(URL_STATUS, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) { var ms = performance.now() - t0; desenha(d); servidor(d.servidor, ms); marca(true); })
+      .catch(function () { marca(false); });   // mantém os últimos números na tela
+  }
+
+  riscos();
+  busca();
+  setInterval(busca, 10000);
+})();
+</script>
+</body>
+</html>
