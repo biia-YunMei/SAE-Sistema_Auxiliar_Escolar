@@ -81,7 +81,7 @@
             type="button"
             role="tab"
           >
-            Histórico de mensagens enviadas
+            Mensagens recebidas
           </button>
         </li>
       </ul>
@@ -292,7 +292,7 @@
                 </table>
               </div>
               <div id="emptyMensagens" class="text-muted text-center py-4">
-                Nenhuma mensagem encontrada.
+                Aqui aparecem as mensagens dos alunos das suas turmas. Nenhuma ainda.
               </div>
             </div>
           </div>
@@ -677,7 +677,10 @@
 
         async function loadTasks() {
           try {
-            classes = (await saeRequest('/classes')).items || []
+            classes = ((await saeRequest('/classes')).items || []).filter(
+              (item) => !item.status || item.status === 'ACTIVE',
+            )
+            saeDefinirTurmas(classes.map((item) => item.name))
             const result = await saeRequest('/tasks?mine=1')
             window.saeProfessorUI.setTasks(
               (result.items || []).map((task) => ({
@@ -689,7 +692,7 @@
                 ],
                 conteudo: task.description || task.title,
                 dataEntrega: task.due_date,
-                dataLancamento: (task.created_at || '').slice(0, 10),
+                dataLancamento: saeDiaLocal(task.created_at),
                 classId: task.class_id,
               })),
             )
@@ -784,8 +787,8 @@
 
         function formatarHora(iso) {
           if (!iso) return '—'
-          const d = new Date(iso)
-          if (isNaN(d.getTime())) return String(iso)
+          const d = saeDataServidor(iso)
+          if (!d) return String(iso)
           return d.toLocaleString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
