@@ -1,7 +1,9 @@
 /* Comunicação do front-end SAE com o servidor C. */
-const saeDefaultApi = (window.location.protocol === 'http:' || window.location.protocol === 'https:')
-  ? `${window.location.origin}/api`
-  : 'http://127.0.0.1:8080/api'
+const saeDefaultApi = window.location.hostname === 'escola.cidades.io'
+  ? 'https://api.cidades.io/api/escola/v1/sae'
+  : (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+    ? `${window.location.origin}/api`
+    : 'http://127.0.0.1:8080/api'
 const SAE_API = localStorage.getItem('saeApiUrl') || saeDefaultApi
 
 /* Ao abrir arquivos HTML diretamente, alguns navegadores isolam o armazenamento
