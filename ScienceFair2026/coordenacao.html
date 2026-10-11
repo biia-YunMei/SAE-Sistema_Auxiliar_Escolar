@@ -111,6 +111,7 @@
             Alunos
           </button>
         </li>
+
         <li class="nav-item">
           <button
             class="nav-link"
@@ -120,7 +121,20 @@
             type="button"
             role="tab"
           >
-            Histórico de mensagens
+            Mensagens recebidas
+          </button>
+        </li>
+
+        <li class="nav-item" id="item-sincronizar" hidden>
+          <button
+            class="nav-link"
+            id="tab-sincronizar"
+            data-bs-toggle="tab"
+            data-bs-target="#page-sincronizar"
+            type="button"
+            role="tab"
+          >
+            Sincronizar com a equipe
           </button>
         </li>
       </ul>
@@ -189,7 +203,7 @@
                       <label class="form-label"
                         >Turmas <span class="text-danger">*</span></label
                       >
-                      <div id="turmasComunicado"></div>
+                      <div id="turmasComunicado" data-todas="1"></div>
                     </div>
                     <div class="mb-3">
                       <label class="form-label"
@@ -386,7 +400,7 @@
                           <th>Nome</th>
                           <th>WhatsApp</th>
                           <th>E-mail</th>
-                          <th class="acoes-col" style="width: 120px">Ações</th>
+                          <th class="acoes-col" style="width: 80px">Ações</th>
                         </tr>
                       </thead>
                       <tbody id="tabelaProfessores"></tbody>
@@ -404,6 +418,7 @@
           </div>
         </div>
 
+        <!-- HISTÓRICO -->
         <!-- TURMAS -->
         <div class="tab-pane fade" id="page-turmas" role="tabpanel">
           <div class="row g-4">
@@ -429,19 +444,6 @@
                         formulários.</small
                       >
                     </div>
-                    <div class="mb-3">
-                      <label class="form-label"
-                        >Série <span class="text-danger">*</span></label
-                      >
-                      <input
-                        type="text"
-                        class="form-control"
-                        id="turmaSerie"
-                        placeholder="Ex: Fundamental II"
-                        required
-                        maxlength="60"
-                      />
-                    </div>
                     <button type="submit" class="btn btn-teal w-100">
                       Cadastrar turma
                     </button>
@@ -462,7 +464,7 @@
                     type="text"
                     class="form-control mb-3"
                     id="buscaTurmas"
-                    placeholder="Buscar por nome ou série..."
+                    placeholder="Buscar por nome..."
                   />
                   <div class="table-scroll">
                     <table class="table table-hover">
@@ -470,7 +472,6 @@
                         <tr>
                           <th style="padding-left: 1.25rem">#</th>
                           <th>Nome</th>
-                          <th>Série</th>
                           <th class="acoes-col" style="width: 80px">Ações</th>
                         </tr>
                       </thead>
@@ -486,7 +487,6 @@
           </div>
         </div>
 
-        <!-- HISTÓRICO -->
         <div class="tab-pane fade" id="page-historico" role="tabpanel">
           <div class="card">
             <div class="card-header">Tarefas cadastradas</div>
@@ -585,8 +585,8 @@
                           <th>#</th>
                           <th>Nome</th>
                           <th>Telefone</th>
-                          <th>Série</th>
                           <th>Turma</th>
+                          <th class="acoes-col" style="width: 80px">Ações</th>
                         </tr>
                       </thead>
                       <tbody id="tabelaAlunos"></tbody>
@@ -636,14 +636,96 @@
             </div>
           </div>
         </div>
+
+        <div class="tab-pane fade" id="page-sincronizar" role="tabpanel">
+          <p class="text-muted mb-3">
+            O SAE da equipe roda no computador dela (sistema local). Esta versão online é a reserva.
+            Cada um tem o seu banco; para os dois ficarem iguais, traga primeiro o arquivo da equipe e depois leve o daqui.
+          </p>
+          <div class="row g-3">
+            <div class="col-lg-6">
+              <div class="card h-100">
+                <div class="card-header">1. Trazer o que está no sistema da equipe</div>
+                <div class="card-body">
+                  <p class="text-muted">
+                    Escolha o arquivo <b>school.db</b> da pasta <b>data</b> do sistema da equipe. Primeiro aparece uma prévia.
+                    Nada daqui é apagado nem substituído: só entra o que falta.
+                  </p>
+                  <input type="file" class="form-control mb-3" id="arquivoEquipe" accept=".db,.sqlite,.sqlite3" />
+                  <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-primary" id="btnPrevia" type="button">Ver prévia</button>
+                    <button class="btn btn-primary" id="btnImportar" type="button" disabled>Importar</button>
+                  </div>
+                  <div id="resultadoImportar" class="mt-3 small" aria-live="polite"></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-6">
+              <div class="card h-100">
+                <div class="card-header">2. Levar os cadastros daqui para a equipe</div>
+                <div class="card-body">
+                  <p class="text-muted">
+                    Baixa um <b>school.db</b> no formato do sistema da equipe, com tudo o que está cadastrado aqui.
+                    No computador da equipe: pare o sistema, guarde uma cópia do arquivo antigo e coloque este no lugar, na pasta <b>data</b>.
+                  </p>
+                  <button class="btn btn-primary" id="btnExportar" type="button">Baixar arquivo para a equipe</button>
+                  <div id="resultadoExportar" class="mt-3 small" aria-live="polite"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="modalEditarAluno"
+      tabindex="-1"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar aluno</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="formEditarAluno" autocomplete="off">
+              <input type="hidden" id="editAlunoId" />
+              <div class="mb-3">
+                <label class="form-label" for="editAlunoNome"
+                  >Nome <span class="text-danger">*</span></label
+                >
+                <input type="text" class="form-control" id="editAlunoNome" maxlength="120" required />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="editAlunoTelefone"
+                  >Telefone <span class="text-danger">*</span></label
+                >
+                <input type="tel" class="form-control" id="editAlunoTelefone" required />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="editAlunoTurma"
+                  >Turma <span class="text-danger">*</span></label
+                >
+                <select id="editAlunoTurma" class="form-select" required></select>
+              </div>
+              <button type="submit" class="btn btn-teal w-100">Salvar</button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- TOAST CONTAINER -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <!-- MODAIS -->
-    <!-- Ver Mensagem (comunicado) -->
+    <!-- MODAIS (Ver/Editar) -->
     <div
       class="modal fade"
       id="modalVerMensagem"
@@ -669,8 +751,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Editar Comunicado -->
     <div
       class="modal fade"
       id="modalEditarComunicado"
@@ -694,13 +774,12 @@
                 <label class="form-label"
                   >Turmas <span class="text-danger">*</span></label
                 >
-                <div id="editTurmasComunicado"></div>
+                <div id="editTurmasComunicado" data-todas="1"></div>
               </div>
               <div class="mb-3">
                 <label class="form-label"
                   >Título <span class="text-danger">*</span></label
-                >
-                <input
+                ><input
                   type="text"
                   class="form-control"
                   id="editComTitulo"
@@ -710,8 +789,7 @@
               <div class="mb-3">
                 <label class="form-label"
                   >Mensagem <span class="text-danger">*</span></label
-                >
-                <textarea
+                ><textarea
                   class="form-control"
                   id="editComMensagem"
                   rows="3"
@@ -728,8 +806,7 @@
                     class="form-control"
                     id="editComData"
                     required
-                  />
-                  <span class="input-group-text"
+                  /><span class="input-group-text"
                     ><i class="bi bi-calendar3"></i
                   ></span>
                 </div>
@@ -741,175 +818,16 @@
       </div>
     </div>
 
-    <!-- Ver Professor -->
-    <div
-      class="modal fade"
-      id="modalVerProfessor"
-      tabindex="-1"
-      aria-hidden="true"
-    >
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Detalhes do professor</h5>
-            <button
-              type="button"
-              class="btn-close"
-              data-bs-dismiss="modal"
-            ></button>
-          </div>
-          <div class="modal-body" id="modalVerProfessorConteudo"></div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-teal" data-bs-dismiss="modal">
-              Fechar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Editar Professor -->
-    <div
-      class="modal fade"
-      id="modalEditarProfessor"
-      tabindex="-1"
-      aria-hidden="true"
-    >
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Editar professor</h5>
-            <button
-              type="button"
-              class="btn-close"
-              data-bs-dismiss="modal"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <form id="formEditarProfessor">
-              <input type="hidden" id="editProfId" />
-              <div class="mb-3">
-                <label class="form-label"
-                  >Nome <span class="text-danger">*</span></label
-                >
-                <input
-                  type="text"
-                  class="form-control"
-                  id="editProfNome"
-                  required
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label"
-                  >WhatsApp <span class="text-danger">*</span></label
-                >
-                <input
-                  type="tel"
-                  class="form-control"
-                  id="editProfWhats"
-                  placeholder="55 (66) 99999-9999"
-                  inputmode="numeric"
-                  maxlength="19"
-                  required
-                />
-              </div>
-              <div class="mb-3">
-                <label class="form-label">E-mail</label>
-                <input type="email" class="form-control" id="editProfEmail" />
-              </div>
-              <div class="mb-3">
-                <label class="form-label"
-                  >Nova senha
-                  <small class="text-muted"
-                    >(deixe em branco para manter)</small
-                  ></label
-                >
-                <div class="input-group">
-                  <input
-                    type="password"
-                    class="form-control"
-                    id="editProfSenha"
-                    minlength="6"
-                    autocomplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary"
-                    id="toggleEditSenha"
-                    title="Mostrar senha"
-                  >
-                    <i class="bi bi-eye-fill" id="toggleEditSenhaIcon"></i>
-                  </button>
-                </div>
-              </div>
-              <button type="submit" class="btn btn-teal w-100">Salvar</button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Senha Criada -->
-    <div
-      class="modal fade"
-      id="modalSenhaCriada"
-      tabindex="-1"
-      aria-hidden="true"
-    >
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Professor cadastrado</h5>
-            <button
-              type="button"
-              class="btn-close"
-              data-bs-dismiss="modal"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <p class="mb-2">
-              Anote a senha abaixo. Por segurança, ela
-              <strong>não será exibida novamente</strong>. Se perder, use
-              <em>Editar</em> para redefinir.
-            </p>
-            <div class="input-group">
-              <input
-                type="text"
-                class="form-control"
-                id="senhaCriada"
-                readonly
-              />
-              <button class="btn btn-teal" type="button" id="copiarSenhaBtn">
-                <i class="bi bi-clipboard"></i> Copiar
-              </button>
-            </div>
-            <p class="mt-3 mb-0 small text-muted">
-              Professor: <span id="nomeProfessorCriado"></span>
-            </p>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-teal" data-bs-dismiss="modal">
-              Entendi
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/script.js"></script>
     <script src="js/api.js"></script>
-
-    <!-- SCRIPT PRINCIPAL (comunicados + dashboard + turmas) -->
     <script>
       ;(function () {
         'use strict'
 
         let comunicados = []
         let idCounter = 1
-        let classesCache = []
-        let turmasLista = []
 
         const tabela = document.getElementById('tabelaComunicados')
         const empty = document.getElementById('emptyComunicados')
@@ -928,6 +846,11 @@
           document.getElementById('modalEditarComunicado'),
         )
 
+        function initTurmas() {
+          initTurmaSelector('turmasComunicado')
+          initTurmaSelector('editTurmasComunicado')
+        }
+
         function setDataAtual() {
           const now = new Date()
           dataAtual.textContent = now.toLocaleDateString('pt-BR', {
@@ -935,13 +858,6 @@
             month: '2-digit',
             year: 'numeric',
           })
-        }
-
-        function renderTurmasComunicado(selected = []) {
-          gerarTurmasCheckboxes('turmasComunicado', classesCache, selected)
-        }
-        function renderEditTurmasComunicado(selected = []) {
-          gerarTurmasCheckboxes('editTurmasComunicado', classesCache, selected)
         }
 
         function render() {
@@ -970,7 +886,8 @@
                 <button class="btn-circle-sm btn-danger" onclick="excluirComunicado(${c.id})"><i class="bi bi-trash3-fill"></i></button>
               </div>
             </td>
-          </tr>`,
+          </tr>
+        `,
             )
             .join('')
 
@@ -984,10 +901,11 @@
 
         function atualizarDashboard() {
           const items = []
+
           comunicados.forEach((c) => {
             items.push({
               tipo: 'Comunicado',
-              desc: `Comunicado "${c.titulo}" para ${formatarTurmas(c.turmas)}`,
+              desc: `Comunicado “${c.titulo}” para ${formatarTurmas(c.turmas)}`,
               data: formatDate(c.data),
               sortKey: c.data || '',
             })
@@ -996,11 +914,12 @@
             const raw = p.created_at || ''
             items.push({
               tipo: 'Professor',
-              desc: `Professor "${p.nome}" cadastrado`,
-              data: raw ? formatDate(raw.slice(0, 10)) : '—',
+              desc: `Professor “${p.nome}” cadastrado`,
+              data: raw ? formatDate(saeDiaLocal(raw)) : '—',
               sortKey: raw,
             })
           })
+
           const recentes = items
             .sort((a, b) => String(b.sortKey).localeCompare(String(a.sortKey)))
             .slice(0, 5)
@@ -1009,6 +928,7 @@
             ultimas.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">Nenhuma atividade registrada.</td></tr>`
             return
           }
+
           ultimas.innerHTML = recentes
             .map(
               (item) => `
@@ -1016,7 +936,8 @@
             <td style="padding-left:1.25rem"><span class="badge badge-teal">${item.tipo}</span></td>
             <td>${item.desc}</td>
             <td class="text-muted small">${item.data}</td>
-          </tr>`,
+          </tr>
+        `,
             )
             .join('')
         }
@@ -1036,12 +957,14 @@
         window.verMensagem = function (id) {
           const c = comunicados.find((com) => com.id === id)
           if (!c) return
+          const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
           document.getElementById('modalVerMensagemTitulo').textContent =
             c.titulo
           document.getElementById('modalVerMensagemConteudo').innerHTML = `
-          <p><strong>Turmas:</strong> ${formatarTurmas(c.turmas)}</p>
+          <p><strong>Turmas:</strong> ${esc(formatarTurmas(c.turmas))}</p>
           <p><strong>Data:</strong> ${formatDate(c.data)}</p>
-          <hr><p style="white-space:pre-wrap;">${c.mensagem}</p>`
+          <hr><p style="white-space:pre-wrap;">${esc(c.mensagem)}</p>
+        `
           modalVer.show()
         }
 
@@ -1052,7 +975,8 @@
           document.getElementById('editComTitulo').value = c.titulo
           document.getElementById('editComMensagem').value = c.mensagem
           document.getElementById('editComData').value = c.data
-          renderEditTurmasComunicado(c.turmas)
+          // Preenche o campo de turmas com as turmas atuais
+          gerarSelectorTurmas('editTurmasComunicado', c.turmas)
           modalEditar.show()
         }
 
@@ -1061,31 +985,28 @@
           .addEventListener('submit', async function (e) {
             e.preventDefault()
             const id = parseInt(document.getElementById('editComId').value)
-            const turmas = getTurmasCheckboxesMarcadas('editTurmasComunicado')
+            const turmas = getTurmasSelecionadas('editTurmasComunicado')
             const titulo = document.getElementById('editComTitulo').value.trim()
             const mensagem = document
               .getElementById('editComMensagem')
               .value.trim()
             const data = document.getElementById('editComData').value
-            if (!turmas.length || !titulo || !mensagem || !data) {
+            if (!turmas.length || !titulo || !mensagem) {
               showToast(
-                'Preencha todos os campos e selecione ao menos uma turma.',
+                'Preencha todos os campos e marque ao menos uma turma.',
                 'warning',
               )
               return
             }
-            const hoje = new Date().toISOString().split('T')[0]
-            if (data < hoje) {
-              showToast('Data não pode ser anterior a hoje.', 'warning')
-              return
-            }
             try {
-              const selected = classesCache.filter((item) =>
-                turmas.includes(item.name),
-              )
+              const classes = (await saeRequest('/classes')).items || []
+              const selected = turmas.includes('Todas')
+                ? [{ id: 0, name: 'Todas' }]
+                : turmas
+                    .map((name) => classes.find((item) => item.name === name))
+                    .filter(Boolean)
               if (!selected.length)
-                return showToast('Selecione uma turma cadastrada.', 'warning')
-
+                return showToast('Marque ao menos uma turma.', 'warning')
               const ids = window.__saeNoticeIds?.get(id) || [id]
               await saeRequest(`/notices/${ids[0]}`, {
                 method: 'PUT',
@@ -1098,8 +1019,8 @@
               await Promise.all(
                 ids
                   .slice(1)
-                  .map((nid) =>
-                    saeRequest(`/notices/${nid}`, { method: 'DELETE' }),
+                  .map((noticeId) =>
+                    saeRequest(`/notices/${noticeId}`, { method: 'DELETE' }),
                   ),
               )
               const created = await Promise.all(
@@ -1123,7 +1044,7 @@
               }
               window.__saeNoticeIds?.set(id, [
                 ids[0],
-                ...created.map((i) => i.id),
+                ...created.map((item) => item.id),
               ])
               modalEditar.hide()
               render()
@@ -1135,13 +1056,13 @@
 
         form.addEventListener('submit', function (e) {
           e.preventDefault()
-          const turmas = getTurmasCheckboxesMarcadas('turmasComunicado')
+          const turmas = getTurmasSelecionadas('turmasComunicado')
           const titulo = document.getElementById('comTitulo').value.trim()
           const mensagem = document.getElementById('comMensagem').value.trim()
           const data = document.getElementById('comData').value
           if (!turmas.length || !titulo || !mensagem || !data) {
             showToast(
-              'Preencha todos os campos e selecione ao menos uma turma.',
+              'Preencha todos os campos e informe as turmas.',
               'warning',
             )
             return
@@ -1151,9 +1072,15 @@
             showToast('Data não pode ser anterior a hoje.', 'warning')
             return
           }
-          comunicados.push({ id: idCounter++, turmas, titulo, mensagem, data })
+          comunicados.push({
+            id: idCounter++,
+            turmas: turmas,
+            titulo,
+            mensagem,
+            data,
+          })
           form.reset()
-          renderTurmasComunicado()
+          gerarSelectorTurmas('turmasComunicado')
           render()
           showToast('Comunicado enviado!', 'success')
         })
@@ -1168,19 +1095,10 @@
           refreshDashboard() {
             atualizarDashboard()
           },
-          setClasses(items) {
-            classesCache = items || []
-            renderTurmasComunicado()
-            renderEditTurmasComunicado()
-          },
-          getClasses() {
-            return classesCache
-          },
         }
 
         document.addEventListener('DOMContentLoaded', function () {
-          renderTurmasComunicado()
-          renderEditTurmasComunicado()
+          initTurmas()
 
           if (!saeRequireLogin()) return
           setDataAtual()
@@ -1188,12 +1106,11 @@
           document.getElementById('comData').setAttribute('min', hoje)
           document.getElementById('comData').value = hoje
           document.getElementById('editComData').setAttribute('min', hoje)
+
           render()
         })
       })()
     </script>
-
-    <!-- HISTÓRICO DE TAREFAS -->
     <script>
       ;(function () {
         if (!saeRequireLogin()) return
@@ -1209,7 +1126,6 @@
                 "'": '&#39;',
               })[char],
           )
-
         async function loadTaskHistory() {
           const tbody = document.getElementById('historicoTarefas')
           const empty = document.getElementById('emptyHistorico')
@@ -1232,12 +1148,9 @@
             tbody.innerHTML = items
               .map(
                 (task) => `<tr>
-              <td>${escapeCell(teachersById.get(task.teacher_id) || `ID ${task.teacher_id}`)}</td>
-              <td>${escapeCell(byId.get(task.class_id) || '—')}</td>
-              <td>${escapeCell(task.subject)}</td>
-              <td>${escapeCell(task.description || task.title)}</td>
-              <td>${formatDate(task.due_date)}</td>
-              <td>${formatDate((task.created_at || '').slice(0, 10))}</td>
+              <td>${escapeCell(teachersById.get(task.teacher_id) || `ID ${task.teacher_id}`)}</td><td>${escapeCell(byId.get(task.class_id) || '—')}</td>
+              <td>${escapeCell(task.subject)}</td><td>${escapeCell(task.description || task.title)}</td>
+              <td>${formatDate(task.due_date)}</td><td>${formatDate(saeDiaLocal(task.created_at))}</td>
             </tr>`,
               )
               .join('')
@@ -1252,19 +1165,17 @@
           .addEventListener('shown.bs.tab', loadTaskHistory)
       })()
     </script>
-
-    <!-- CARREGAR COMUNICADOS (notices) e CLASSES -->
     <script>
       ;(function () {
         'use strict'
         if (!saeRequireLogin()) return
-
+        let classes = []
         async function loadNotices() {
           try {
-            const classesRes = await saeRequest('/classes')
-            const classes = classesRes.items || []
-            window.saeCoordenacaoUI.setClasses(classes)
-
+            classes = ((await saeRequest('/classes')).items || []).filter(
+              (item) => !item.status || item.status === 'ACTIVE',
+            )
+            saeDefinirTurmas(classes.map((item) => item.name))
             const data = await saeRequest('/notices')
             const grouped = new Map()
             ;(data.items || []).forEach((notice) => {
@@ -1275,7 +1186,7 @@
                 turmas: [],
                 titulo: notice.title,
                 mensagem: notice.content,
-                data: notice.created_at.slice(0, 10),
+                data: saeDiaLocal(notice.created_at),
               }
               item.ids.push(notice.id)
               item.turmas.push(notice.class_name || 'Todas')
@@ -1290,33 +1201,40 @@
             showToast(error.message, 'danger')
           }
         }
-
         document.getElementById('formComunicado').addEventListener(
           'submit',
           async (event) => {
             event.preventDefault()
             event.stopImmediatePropagation()
-            const nomes = getTurmasCheckboxesMarcadas('turmasComunicado')
+            const nomes = getTurmasSelecionadas('turmasComunicado')
+            if (nomes.some((n) => n !== 'Todas' && !classes.some((item) => item.name === n))) {
+              try {
+                classes = ((await saeRequest('/classes')).items || []).filter((item) => !item.status || item.status === 'ACTIVE')
+              } catch (_) {}
+            }
             const title = document.getElementById('comTitulo').value.trim()
             const content = document.getElementById('comMensagem').value.trim()
-            const classes = window.saeCoordenacaoUI.getClasses()
-            const selected = classes.filter((item) => nomes.includes(item.name))
-            if (!title || !content || !selected.length) {
+            const selected = nomes.includes('Todas')
+              ? [{ id: 0 }]
+              : classes.filter((item) => nomes.includes(item.name))
+            if (!title || !content || !selected.length)
               return showToast(
-                'Selecione uma turma cadastrada e preencha os campos.',
+                'Marque ao menos uma turma e preencha título e mensagem.',
                 'warning',
               )
-            }
             try {
               await Promise.all(
                 selected.map((item) =>
                   saeRequest('/notices', {
                     method: 'POST',
-                    body: JSON.stringify({ class_id: item.id, title, content }),
+                    body: JSON.stringify(
+                      item.id ? { class_id: item.id, title, content } : { title, content },
+                    ),
                   }),
                 ),
               )
               event.target.reset()
+              gerarSelectorTurmas('turmasComunicado')
               await loadNotices()
               showToast('Comunicado enviado!', 'success')
             } catch (error) {
@@ -1326,10 +1244,9 @@
           true,
         )
         window.addEventListener('load', () => setTimeout(loadNotices, 0))
+        document.addEventListener('sae:turmas-mudaram', () => loadNotices())
       })()
     </script>
-
-    <!-- SCRIPT DE PROFESSORES (com ver/editar/excluir + modal senha) -->
     <script>
       ;(function () {
         'use strict'
@@ -1350,16 +1267,6 @@
         const toggleSenha = document.getElementById('toggleSenha')
         const toggleSenhaIcon = document.getElementById('toggleSenhaIcon')
 
-        const modalVerProf = new bootstrap.Modal(
-          document.getElementById('modalVerProfessor'),
-        )
-        const modalEditarProf = new bootstrap.Modal(
-          document.getElementById('modalEditarProfessor'),
-        )
-        const modalSenhaCriada = new bootstrap.Modal(
-          document.getElementById('modalSenhaCriada'),
-        )
-
         function escapeHtml(str) {
           return String(str ?? '').replace(
             /[&<>"']/g,
@@ -1374,11 +1281,14 @@
           )
         }
 
+        // ─── MÁSCARA WHATSAPP: 55 (xx) xxxxx-xxxx ───
+        // Local para não depender do script.js estar atualizado.
         function mascaraWhats(valor) {
           let d = String(valor || '').replace(/\D/g, '')
           if (!d) return ''
+          // Se já digitou 3+ dígitos e não começa com 55, assume DDI Brasil
           if (d.length >= 3 && !d.startsWith('55')) d = '55' + d
-          d = d.slice(0, 13)
+          d = d.slice(0, 13) // 55 + DDD(2) + 9 dígitos
           if (d.length < 3) return d
           const resto = d.slice(2)
           if (resto.length <= 2) return `55 (${resto}`
@@ -1387,53 +1297,53 @@
           return `55 (${resto.slice(0, 2)}) ${resto.slice(2, 7)}-${resto.slice(7)}`
         }
 
-        function aplicarMascaraEmInput(input, onToggle) {
-          if (!input) return
-          input.addEventListener('keydown', function (e) {
+        if (inputWhats) {
+          // Bloqueia teclas não-numéricas
+          inputWhats.addEventListener('keydown', function (e) {
             if (e.ctrlKey || e.metaKey || e.altKey) return
-            if (e.key && e.key.length === 1 && !/\d/.test(e.key))
+            if (e.key && e.key.length === 1 && !/\d/.test(e.key)) {
               e.preventDefault()
+            }
           })
-          input.addEventListener('beforeinput', function (e) {
+
+          // Bloqueia inserção via IME/ditado
+          inputWhats.addEventListener('beforeinput', function (e) {
             if (e.inputType === 'insertFromPaste') return
-            if (e.data != null && /\D/.test(e.data)) e.preventDefault()
+            if (e.data != null && /\D/.test(e.data)) {
+              e.preventDefault()
+            }
           })
-          input.addEventListener('paste', function (e) {
+
+          // Sanitiza colagem
+          inputWhats.addEventListener('paste', function (e) {
             e.preventDefault()
             const texto =
               (e.clipboardData || window.clipboardData).getData('text') || ''
             this.value = mascaraWhats(texto)
             this.dispatchEvent(new Event('input', { bubbles: true }))
           })
-          input.addEventListener('input', function () {
+
+          // Aplica máscara a cada digitação
+          inputWhats.addEventListener('input', function () {
             this.value = mascaraWhats(this.value)
           })
         }
 
-        aplicarMascaraEmInput(inputWhats)
-        aplicarMascaraEmInput(document.getElementById('editProfWhats'))
-
-        function wireToggleSenha(btnId, iconId, inputId) {
-          const btn = document.getElementById(btnId)
-          const icon = document.getElementById(iconId)
-          const input = document.getElementById(inputId)
-          if (!btn || !input) return
-          btn.addEventListener('click', function () {
-            const mostrando = input.type === 'text'
-            input.type = mostrando ? 'password' : 'text'
-            if (icon)
-              icon.className = mostrando
-                ? 'bi bi-eye-fill'
-                : 'bi bi-eye-slash-fill'
-            btn.title = mostrando ? 'Mostrar senha' : 'Ocultar senha'
+        // ─── BOTÃO MOSTRAR/OCULTAR SENHA ───
+        if (toggleSenha && inputSenha && toggleSenhaIcon) {
+          toggleSenha.addEventListener('click', function () {
+            const mostrando = inputSenha.type === 'text'
+            inputSenha.type = mostrando ? 'password' : 'text'
+            toggleSenhaIcon.className = mostrando
+              ? 'bi bi-eye-fill'
+              : 'bi bi-eye-slash-fill'
+            toggleSenha.title = mostrando ? 'Mostrar senha' : 'Ocultar senha'
+            toggleSenha.setAttribute(
+              'aria-label',
+              mostrando ? 'Mostrar senha' : 'Ocultar senha',
+            )
           })
         }
-        wireToggleSenha('toggleSenha', 'toggleSenhaIcon', 'profSenha')
-        wireToggleSenha(
-          'toggleEditSenha',
-          'toggleEditSenhaIcon',
-          'editProfSenha',
-        )
 
         function render() {
           const filtro = busca.value.toLowerCase().trim()
@@ -1458,12 +1368,13 @@
             <td>${p.email ? escapeHtml(p.email) : '<span class="text-muted">—</span>'}</td>
             <td>
               <div class="btn-group btn-group-sm">
-                <button class="btn-circle-sm btn-view" onclick="verProfessor(${p.id})" title="Ver"><i class="bi bi-eye-fill"></i></button>
-                <button class="btn-circle-sm btn-edit" onclick="editarProfessor(${p.id})" title="Editar"><i class="bi bi-pencil-fill"></i></button>
-                <button class="btn-circle-sm btn-danger" onclick="excluirProfessor(${p.id})" title="Excluir"><i class="bi bi-trash3-fill"></i></button>
+                <button class="btn-circle-sm btn-danger" onclick="excluirProfessor(${p.id})" title="Excluir">
+                  <i class="bi bi-trash3-fill"></i>
+                </button>
               </div>
             </td>
-          </tr>`,
+          </tr>
+        `,
             )
             .join('')
 
@@ -1496,33 +1407,6 @@
           }
         }
 
-        window.verProfessor = function (id) {
-          const p = professores.find((x) => x.id === id)
-          if (!p) return
-          document.getElementById('modalVerProfessorConteudo').innerHTML = `
-            <p class="mb-2"><strong>Nome:</strong> ${escapeHtml(p.nome)}</p>
-            <p class="mb-2"><strong>WhatsApp:</strong> ${escapeHtml(p.whatsapp || '—')}</p>
-            <p class="mb-2"><strong>E-mail:</strong> ${p.email ? escapeHtml(p.email) : '<span class="text-muted">não informado</span>'}</p>
-            <hr>
-            <p class="mb-0 small text-muted">A senha não pode ser recuperada. Use <em>Editar</em> para redefinir.</p>
-          `
-          modalVerProf.show()
-        }
-
-        window.editarProfessor = function (id) {
-          const p = professores.find((x) => x.id === id)
-          if (!p) return
-          document.getElementById('editProfId').value = p.id
-          document.getElementById('editProfNome').value = p.nome
-          document.getElementById('editProfWhats').value = p.whatsapp || ''
-          document.getElementById('editProfEmail').value = p.email || ''
-          document.getElementById('editProfSenha').value = ''
-          document.getElementById('editProfSenha').type = 'password'
-          const icon = document.getElementById('toggleEditSenhaIcon')
-          if (icon) icon.className = 'bi bi-eye-fill'
-          modalEditarProf.show()
-        }
-
         window.excluirProfessor = async function (id) {
           if (!confirm('Deseja excluir este professor?')) return
           try {
@@ -1534,7 +1418,6 @@
           }
         }
 
-        // Envio do form de criação
         form.addEventListener('submit', async function (event) {
           event.preventDefault()
           const nome = inputNome.value.trim()
@@ -1558,6 +1441,7 @@
             )
             return
           }
+
           try {
             await saeRequest('/teachers', {
               method: 'POST',
@@ -1569,212 +1453,21 @@
               }),
             })
             form.reset()
+            // Reseta o tipo do input de senha para password
             if (inputSenha) inputSenha.type = 'password'
             if (toggleSenhaIcon) toggleSenhaIcon.className = 'bi bi-eye-fill'
-            // Mostra modal com a senha criada
-            document.getElementById('senhaCriada').value = senha
-            document.getElementById('nomeProfessorCriado').textContent = nome
-            modalSenhaCriada.show()
             await loadProfessores()
+            showToast('Professor cadastrado!', 'success')
           } catch (error) {
             showToast(error.message, 'danger')
           }
         })
 
-        // Botão copiar senha
-        const copiarBtn = document.getElementById('copiarSenhaBtn')
-        if (copiarBtn) {
-          copiarBtn.addEventListener('click', async function () {
-            const campo = document.getElementById('senhaCriada')
-            try {
-              await navigator.clipboard.writeText(campo.value)
-              showToast('Senha copiada!', 'success')
-            } catch {
-              campo.select()
-              document.execCommand('copy')
-              showToast('Senha copiada!', 'success')
-            }
-          })
-        }
-
-        // Envio do form de edição
-        document
-          .getElementById('formEditarProfessor')
-          .addEventListener('submit', async function (e) {
-            e.preventDefault()
-            const id = parseInt(document.getElementById('editProfId').value)
-            const nome = document.getElementById('editProfNome').value.trim()
-            const whatsapp = document
-              .getElementById('editProfWhats')
-              .value.trim()
-            const email = document.getElementById('editProfEmail').value.trim()
-            const novaSenha = document.getElementById('editProfSenha').value
-
-            if (!nome || !whatsapp) {
-              showToast('Preencha nome e WhatsApp.', 'warning')
-              return
-            }
-            const digitos = whatsapp.replace(/\D/g, '')
-            if (digitos.length < 12) {
-              showToast(
-                'WhatsApp inválido. Informe 55 + DDD + número.',
-                'warning',
-              )
-              return
-            }
-            if (novaSenha && novaSenha.length < 6) {
-              showToast(
-                'A nova senha deve ter pelo menos 6 caracteres.',
-                'warning',
-              )
-              return
-            }
-            try {
-              const body = { name: nome, whatsapp, email }
-              if (novaSenha) body.password = novaSenha
-              await saeRequest(`/teachers/${id}`, {
-                method: 'PUT',
-                body: JSON.stringify(body),
-              })
-              modalEditarProf.hide()
-              await loadProfessores()
-              showToast(
-                novaSenha
-                  ? 'Professor atualizado com nova senha!'
-                  : 'Professor atualizado!',
-                'success',
-              )
-            } catch (error) {
-              showToast(error.message, 'danger')
-            }
-          })
-
         busca.addEventListener('input', render)
+
         window.addEventListener('load', () => setTimeout(loadProfessores, 0))
       })()
     </script>
-
-    <!-- SCRIPT DE TURMAS (cadastro) -->
-    <script>
-      ;(function () {
-        'use strict'
-        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
-
-        let turmas = []
-
-        const form = document.getElementById('formTurma')
-        const nomeInput = document.getElementById('turmaNome')
-        const serieInput = document.getElementById('turmaSerie')
-        const busca = document.getElementById('buscaTurmas')
-        const tabela = document.getElementById('tabelaTurmas')
-        const empty = document.getElementById('emptyTurmas')
-        const total = document.getElementById('totalTurmasBadge')
-
-        if (!form) return
-
-        function escapeHtml(v) {
-          return String(v ?? '').replace(
-            /[&<>"']/g,
-            (ch) =>
-              ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#39;',
-              })[ch],
-          )
-        }
-
-        function render() {
-          const term = (busca.value || '').toLowerCase().trim()
-          const filtradas = turmas.filter(
-            (t) =>
-              String(t.name || '')
-                .toLowerCase()
-                .includes(term) ||
-              String(t.grade || '')
-                .toLowerCase()
-                .includes(term),
-          )
-          tabela.innerHTML = filtradas
-            .map(
-              (t, i) => `
-            <tr>
-              <td style="padding-left:1.25rem">${i + 1}</td>
-              <td>${escapeHtml(t.name)}</td>
-              <td>${escapeHtml(t.grade || '—')}</td>
-              <td>
-                <div class="btn-group btn-group-sm">
-                  <button class="btn-circle-sm btn-danger" onclick="excluirTurma(${t.id})" title="Excluir">
-                    <i class="bi bi-trash3-fill"></i>
-                  </button>
-                </div>
-              </td>
-            </tr>`,
-            )
-            .join('')
-          empty.style.display = filtradas.length ? 'none' : 'block'
-          total.textContent = turmas.length
-        }
-
-        async function loadTurmas() {
-          try {
-            const data = await saeRequest('/classes')
-            turmas = data.items || []
-            // Atualiza também o cache global usado em comunicados
-            if (window.saeCoordenacaoUI && window.saeCoordenacaoUI.setClasses) {
-              window.saeCoordenacaoUI.setClasses(turmas)
-            }
-            render()
-          } catch (error) {
-            showToast(error.message, 'danger')
-          }
-        }
-
-        window.excluirTurma = async function (id) {
-          if (
-            !confirm(
-              'Excluir esta turma? Alunos e comunicados vinculados podem ser afetados.',
-            )
-          )
-            return
-          try {
-            await saeRequest(`/classes/${id}`, { method: 'DELETE' })
-            await loadTurmas()
-            showToast('Turma excluída!', 'danger')
-          } catch (error) {
-            showToast(error.message, 'danger')
-          }
-        }
-
-        form.addEventListener('submit', async function (e) {
-          e.preventDefault()
-          const name = nomeInput.value.trim()
-          const grade = serieInput.value.trim()
-          if (!name || !grade) {
-            showToast('Preencha nome e série da turma.', 'warning')
-            return
-          }
-          try {
-            await saeRequest('/classes', {
-              method: 'POST',
-              body: JSON.stringify({ name, grade, status: 'ACTIVE' }),
-            })
-            form.reset()
-            await loadTurmas()
-            showToast('Turma cadastrada!', 'success')
-          } catch (error) {
-            showToast(error.message, 'danger')
-          }
-        })
-
-        if (busca) busca.addEventListener('input', render)
-        window.addEventListener('load', () => setTimeout(loadTurmas, 0))
-      })()
-    </script>
-
-    <!-- SCRIPT DE ALUNOS -->
     <script>
       ;(function () {
         'use strict'
@@ -1808,12 +1501,15 @@
         if (phoneInput) {
           phoneInput.addEventListener('keydown', function (e) {
             if (e.ctrlKey || e.metaKey || e.altKey) return
-            if (e.key && e.key.length === 1 && !/\d/.test(e.key))
+            if (e.key && e.key.length === 1 && !/\d/.test(e.key)) {
               e.preventDefault()
+            }
           })
           phoneInput.addEventListener('beforeinput', function (e) {
             if (e.inputType === 'insertFromPaste') return
-            if (e.data != null && /\D/.test(e.data)) e.preventDefault()
+            if (e.data != null && /\D/.test(e.data)) {
+              e.preventDefault()
+            }
           })
           phoneInput.addEventListener('paste', function (e) {
             e.preventDefault()
@@ -1830,7 +1526,7 @@
         function render() {
           const term = searchInput.value.trim().toLowerCase()
           const filtered = students.filter((student) =>
-            `${student.name} ${student.phone} ${student.grade} ${student.class_name}`
+            `${student.name} ${student.phone} ${student.class_name}`
               .toLowerCase()
               .includes(term),
           )
@@ -1841,14 +1537,80 @@
               <td>${index + 1}</td>
               <td>${escapeHtml(student.name)}</td>
               <td>${escapeHtml(aplicarMascaraWhats(student.phone) || '—')}</td>
-              <td>${escapeHtml(student.grade)}</td>
               <td>${escapeHtml(student.class_name || '—')}</td>
-            </tr>`,
+              <td>
+                <div class="btn-group btn-group-sm">
+                  <button class="btn-circle-sm btn-edit" data-editar-aluno="${Number(student.id)}" title="Editar"><i class="bi bi-pencil-fill"></i></button>
+                  <button class="btn-circle-sm btn-danger" data-excluir-aluno="${Number(student.id)}" title="Excluir"><i class="bi bi-trash3-fill"></i></button>
+                </div>
+              </td>
+            </tr>
+          `,
             )
             .join('')
           empty.style.display = filtered.length ? 'none' : 'block'
           total.textContent = students.length
         }
+
+        const modalAluno = new bootstrap.Modal(document.getElementById('modalEditarAluno'))
+        const editTel = document.getElementById('editAlunoTelefone')
+        editTel.addEventListener('input', function () {
+          this.value = aplicarMascaraWhats(this.value)
+        })
+
+        table.addEventListener('click', (event) => {
+          const botao = event.target.closest('[data-editar-aluno]')
+          if (!botao) return
+          const id = Number(botao.getAttribute('data-editar-aluno'))
+          const aluno = students.find((s) => Number(s.id) === id)
+          if (!aluno) return
+          document.getElementById('editAlunoId').value = id
+          document.getElementById('editAlunoNome').value = aluno.name || ''
+          editTel.value = aplicarMascaraWhats(aluno.phone) || aluno.phone || ''
+          document.getElementById('editAlunoTurma').innerHTML =
+            '<option value="">Selecione uma turma...</option>' +
+            classes
+              .map((c) => `<option value="${Number(c.id)}"${Number(c.id) === Number(aluno.class_id) ? ' selected' : ''}>${escapeHtml(c.name)}</option>`)
+              .join('')
+          modalAluno.show()
+        })
+
+        document.getElementById('formEditarAluno').addEventListener('submit', async (event) => {
+          event.preventDefault()
+          const id = Number(document.getElementById('editAlunoId').value)
+          const aluno = students.find((s) => Number(s.id) === id)
+          const name = document.getElementById('editAlunoNome').value.trim()
+          const phone = editTel.value.trim()
+          const classId = Number(document.getElementById('editAlunoTurma').value)
+          if (!aluno || !name || !phone || !classId)
+            return showToast('Preencha nome, telefone e turma.', 'warning')
+          try {
+            await saeRequest(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ name, phone }) })
+            if (classId !== Number(aluno.class_id)) {
+              await saeRequest('/students/class', { method: 'POST', body: JSON.stringify({ user_id: id, class_id: classId }) })
+            }
+            modalAluno.hide()
+            await loadStudents()
+            showToast('Aluno atualizado!', 'success')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        })
+
+        table.addEventListener('click', async (event) => {
+          const botao = event.target.closest('[data-excluir-aluno]')
+          if (!botao) return
+          const id = Number(botao.getAttribute('data-excluir-aluno'))
+          const aluno = students.find((s) => Number(s.id) === id)
+          if (!aluno || !confirm(`Excluir o aluno "${aluno.name}"?`)) return
+          try {
+            await saeRequest(`/users/${id}`, { method: 'DELETE' })
+            await loadStudents()
+            showToast('Aluno excluído!', 'danger')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        })
 
         async function loadStudents() {
           try {
@@ -1860,16 +1622,19 @@
           }
         }
 
+        document.addEventListener('sae:turmas-mudaram', () => loadClasses())
         async function loadClasses() {
           try {
             const data = await saeRequest('/classes')
-            classes = (data.items || []).filter((c) => c.status === 'ACTIVE')
+            classes = (data.items || []).filter(
+              (classroom) => classroom.status === 'ACTIVE',
+            )
             classInput.innerHTML =
               '<option value="">Selecione uma turma...</option>' +
               classes
                 .map(
-                  (c) =>
-                    `<option value="${Number(c.id)}">${escapeHtml(c.name)} — ${escapeHtml(c.grade)}</option>`,
+                  (classroom) =>
+                    `<option value="${Number(classroom.id)}">${escapeHtml(classroom.name)}${classroom.grade && classroom.grade !== classroom.name ? ' — ' + escapeHtml(classroom.grade) : ''}</option>`,
                 )
                 .join('')
           } catch (error) {
@@ -1899,7 +1664,11 @@
           try {
             await saeRequest('/students', {
               method: 'POST',
-              body: JSON.stringify({ name, phone, class_id: classId }),
+              body: JSON.stringify({
+                name,
+                phone,
+                class_id: classId,
+              }),
             })
             form.reset()
             await loadStudents()
@@ -1918,8 +1687,6 @@
         )
       })()
     </script>
-
-    <!-- SCRIPT DE MENSAGENS -->
     <script>
       ;(function () {
         'use strict'
@@ -1947,16 +1714,29 @@
           )
         }
 
+        function formatarHora(iso) {
+          if (!iso) return '—'
+          const d = saeDataServidor(iso)
+          if (!d) return String(iso)
+          return d.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        }
+
+        // Tenta mapear o objeto vindo da API para { remetente, mensagem, hora }
+        // independente do nome dos campos.
         function normalizar(item) {
           return {
             remetente:
-              item.sender_name ||
-              item.senderName ||
-              item.name ||
               item.sender ||
               item.remetente ||
               item.from ||
               item.sender_id ||
+              item.contact ||
               '—',
             mensagem:
               item.content ||
@@ -1989,8 +1769,9 @@
               <td style="padding-left:1.25rem">${i + 1}</td>
               <td>${escapeHtml(m.remetente)}</td>
               <td>${escapeHtml(m.mensagem)}</td>
-              <td class="text-muted small">${escapeHtml(formatDateTime(m.hora))}</td>
-            </tr>`,
+              <td class="text-muted small">${escapeHtml(formatarHora(m.hora))}</td>
+            </tr>
+          `,
             )
             .join('')
           empty.style.display = filtradas.length ? 'none' : 'block'
@@ -2002,10 +1783,6 @@
             const data = await saeRequest('/messages')
             const items = data.items || data.messages || data.data || []
             mensagens = items.map(normalizar)
-            // ordena por data decrescente (mais recentes primeiro)
-            mensagens.sort((a, b) =>
-              String(b.hora).localeCompare(String(a.hora)),
-            )
             render()
           } catch (error) {
             showToast(error.message, 'danger')
@@ -2013,12 +1790,222 @@
         }
 
         if (search) search.addEventListener('input', render)
+
+        // Carrega ao abrir a aba (evita request desnecessário no load)
         const tabBtn = document.getElementById('tab-mensagens')
         if (tabBtn) {
           tabBtn.addEventListener('shown.bs.tab', () => {
             if (!mensagens.length) loadMensagens()
           })
         }
+      })()
+    </script>
+    <script>
+      ;(function () {
+        'use strict'
+        if (window.location.hostname !== 'escola.cidades.io') return
+        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
+        document.getElementById('item-sincronizar').hidden = false
+
+        const arquivo = document.getElementById('arquivoEquipe')
+        const btnPrevia = document.getElementById('btnPrevia')
+        const btnImportar = document.getElementById('btnImportar')
+        const btnExportar = document.getElementById('btnExportar')
+        const saidaImp = document.getElementById('resultadoImportar')
+        const saidaExp = document.getElementById('resultadoExportar')
+        if (!arquivo || !btnExportar) return
+
+        let base64 = ''
+
+        function ler(file) {
+          return new Promise((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''))
+            r.onerror = () => reject(new Error('Não deu para ler o arquivo.'))
+            r.readAsDataURL(file)
+          })
+        }
+
+        function linha(rotulo, n) {
+          return '<li>' + rotulo + ': <b>' + Number(n || 0) + '</b></li>'
+        }
+
+        function resumoImportacao(r) {
+          const titulo = r.aplicado ? '<div class="text-success fw-semibold mb-1">Importado.</div>'
+                                    : '<div class="fw-semibold mb-1">Prévia — o que vai entrar:</div>'
+          let html = titulo + '<ul class="mb-1">' +
+            linha('turmas novas', r.turmas) + linha('pessoas novas', r.usuarios) + linha('senhas trazidas', r.senhas) +
+            linha('professores', r.professores) + linha('alunos', r.alunos) + linha('vínculos professor–turma', r.vinculos) +
+            linha('tarefas', r.tarefas) + linha('avisos', r.avisos) + linha('provas', r.provas) + '</ul>'
+          if (r.ignorados && r.ignorados.length) {
+            html += '<div class="text-warning">Ficaram de fora: ' + r.ignorados.map(function (x) {
+              return String(x).replace(/[&<>"']/g, '')
+            }).join('; ') + '</div>'
+          }
+          return html
+        }
+
+        arquivo.addEventListener('change', function () {
+          base64 = ''
+          btnImportar.disabled = true
+          saidaImp.innerHTML = ''
+        })
+
+        btnPrevia.addEventListener('click', async function () {
+          const file = arquivo.files && arquivo.files[0]
+          if (!file) { saidaImp.textContent = 'Escolha o arquivo school.db primeiro.'; return }
+          btnPrevia.disabled = true
+          saidaImp.textContent = 'Lendo o arquivo…'
+          try {
+            base64 = await ler(file)
+            const r = await saeRequest('/import', { method: 'POST', body: JSON.stringify({ arquivo: base64, aplicar: false }) })
+            saidaImp.innerHTML = resumoImportacao(r)
+            btnImportar.disabled = false
+          } catch (e) {
+            saidaImp.textContent = e.message
+          } finally {
+            btnPrevia.disabled = false
+          }
+        })
+
+        btnImportar.addEventListener('click', async function () {
+          if (!base64) return
+          btnImportar.disabled = true
+          saidaImp.textContent = 'Importando…'
+          try {
+            const r = await saeRequest('/import', { method: 'POST', body: JSON.stringify({ arquivo: base64, aplicar: true }) })
+            saidaImp.innerHTML = resumoImportacao(r)
+            base64 = ''
+          } catch (e) {
+            saidaImp.textContent = e.message
+            btnImportar.disabled = false
+          }
+        })
+
+        btnExportar.addEventListener('click', async function () {
+          btnExportar.disabled = true
+          saidaExp.textContent = 'Gerando o arquivo…'
+          try {
+            const r = await saeRequest('/export')
+            const bin = atob(r.arquivo)
+            const bytes = new Uint8Array(bin.length)
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+            const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.sqlite3' }))
+            const a = document.createElement('a')
+            a.href = url
+            a.download = r.nome || 'school.db'
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            setTimeout(function () { URL.revokeObjectURL(url) }, 5000)
+            const s = r.resumo || {}
+            let html = '<div class="text-success fw-semibold mb-1">Arquivo baixado.</div><ul class="mb-1">' +
+              linha('pessoas', s.usuarios) + linha('turmas', s.turmas) + linha('professores', s.professores) +
+              linha('alunos', s.alunos) + linha('tarefas', s.tarefas) + linha('avisos', s.avisos) + linha('provas', s.provas) + '</ul>'
+            if (s.sem_senha_para_la) {
+              html += '<div class="text-warning">' + Number(s.sem_senha_para_la) +
+                ' pessoa(s) vão sem senha: quem nunca entrou por aqui precisa definir a senha no sistema da equipe.</div>'
+            }
+            saidaExp.innerHTML = html
+          } catch (e) {
+            saidaExp.textContent = e.message
+          } finally {
+            btnExportar.disabled = false
+          }
+        })
+      })()
+    </script>
+    <script>
+      ;(function () {
+        'use strict'
+        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
+
+        const form = document.getElementById('formTurma')
+        const nome = document.getElementById('turmaNome')
+        const tabela = document.getElementById('tabelaTurmas')
+        const vazio = document.getElementById('emptyTurmas')
+        const total = document.getElementById('totalTurmasBadge')
+        const busca = document.getElementById('buscaTurmas')
+        if (!form || !tabela) return
+
+        let turmas = []
+
+        function esc(v) {
+          return String(v ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
+        }
+
+        function render() {
+          const filtro = busca.value.toLowerCase().trim()
+          const lista = turmas.filter((t) => t.name.toLowerCase().includes(filtro))
+          tabela.innerHTML = lista
+            .map(
+              (t, i) => `
+          <tr>
+            <td style="padding-left:1.25rem">${i + 1}</td>
+            <td>${esc(t.name)}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                <button class="btn-circle-sm btn-danger" data-excluir-turma="${Number(t.id)}" title="Excluir"><i class="bi bi-trash3-fill"></i></button>
+              </div>
+            </td>
+          </tr>`,
+            )
+            .join('')
+          vazio.style.display = lista.length ? 'none' : 'block'
+          total.textContent = turmas.length
+        }
+
+        async function carregar() {
+          try {
+            const data = await saeRequest('/classes')
+            turmas = (data.items || []).filter((t) => t.status === 'ACTIVE')
+            render()
+            saeDefinirTurmas(turmas.map((t) => t.name))
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        }
+
+        function avisarMudanca() {
+          document.dispatchEvent(new CustomEvent('sae:turmas-mudaram'))
+        }
+
+        form.addEventListener('submit', async function (e) {
+          e.preventDefault()
+          const n = nome.value.trim()
+          if (!n) return showToast('Informe o nome da turma.', 'warning')
+          try {
+            await saeRequest('/classes', {
+              method: 'POST',
+              body: JSON.stringify({ name: n, grade: n.slice(0, 30), shift: 'MORNING' }),
+            })
+            form.reset()
+            await carregar()
+            avisarMudanca()
+            showToast('Turma cadastrada!', 'success')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        })
+
+        tabela.addEventListener('click', async function (e) {
+          const botao = e.target.closest('[data-excluir-turma]')
+          if (!botao) return
+          const id = Number(botao.getAttribute('data-excluir-turma'))
+          const t = turmas.find((x) => Number(x.id) === id)
+          if (!t || !confirm(`Excluir a turma "${t.name}"? As tarefas e os comunicados dela também serão apagados.`)) return
+          try {
+            await saeRequest(`/classes/${id}`, { method: 'DELETE' })
+            await carregar()
+            avisarMudanca()
+            showToast('Turma excluída!', 'danger')
+          } catch (error) {
+            showToast(error.message, 'danger')
+          }
+        })
+
+        busca.addEventListener('input', render)
+        carregar()
       })()
     </script>
   </body>
