@@ -154,45 +154,78 @@ function splitTurma(turma) {
 // ─── CAMPO DE TURMA (input de texto livre) ───
 // Substitui o antigo select + checkboxes. O usuário digita a(s) turma(s)
 // separadas por vírgula — ex.: "9º A, 9º B" ou "Maternal I A".
-function gerarSelectorTurmas(containerId, turmasSelecionadas = []) {
-  const container = document.getElementById(containerId)
-  if (!container) return
+let SAE_TURMAS = null
 
-  const turmas = Array.isArray(turmasSelecionadas)
-    ? turmasSelecionadas
-    : turmasSelecionadas
-      ? [turmasSelecionadas]
-      : []
-
-  const value = turmas.join(', ')
-  const escaped = value
+function escTurma(v) {
+  return String(v ?? '')
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-
-  container.innerHTML = `
-    <input
-      type="text"
-      class="form-control turma-input"
-      placeholder="Ex: 9º A, 9º B"
-      value="${escaped}"
-      autocomplete="off"
-    />
-    <small class="text-muted d-block mt-1">Separe múltiplas turmas por vírgula.</small>
-  `
 }
 
-// Lê o valor do campo de turma e devolve array.
+function gerarSelectorTurmas(containerId, turmasSelecionadas = []) {
+  const container = document.getElementById(containerId)
+  if (!container) return
+  container.setAttribute('data-turmas-auto', '1')
+
+  const marcadas = Array.isArray(turmasSelecionadas)
+    ? turmasSelecionadas
+    : turmasSelecionadas
+      ? [turmasSelecionadas]
+      : []
+  container.dataset.marcadas = JSON.stringify(marcadas)
+
+  if (SAE_TURMAS === null) {
+    container.innerHTML = '<small class="text-muted">Carregando turmas…</small>'
+    return
+  }
+  const opcoes = (container.dataset.todas === '1' ? [['Todas', 'Todas as turmas']] : [])
+    .concat(SAE_TURMAS.map((n) => [n, n]))
+  if (!SAE_TURMAS.length) {
+    container.innerHTML = '<small class="text-warning">Nenhuma turma cadastrada ainda. A coordenação cadastra na aba Turmas.</small>'
+    return
+  }
+  container.innerHTML = opcoes
+    .map(
+      ([valor, rotulo], i) => `
+    <div class="form-check form-check-inline">
+      <input class="form-check-input turma-check" type="checkbox" id="${containerId}-t${i}" value="${escTurma(valor)}"${marcadas.includes(valor) ? ' checked' : ''} />
+      <label class="form-check-label" for="${containerId}-t${i}">${escTurma(rotulo)}</label>
+    </div>`,
+    )
+    .join('')
+}
+
 function getTurmasSelecionadas(containerId) {
   const container = document.getElementById(containerId)
   if (!container) return []
+  const marcadas = [...container.querySelectorAll('.turma-check:checked')].map((c) => c.value)
+  if (marcadas.length || container.querySelector('.turma-check')) return marcadas
   const input = container.querySelector('.turma-input')
-  if (!input) return []
-  return input.value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
+  if (input) return input.value.split(',').map((s) => s.trim()).filter(Boolean)
+  try { return JSON.parse(container.dataset.marcadas || '[]') } catch (_) { return [] }
+}
+
+function saeDefinirTurmas(nomes) {
+  SAE_TURMAS = (nomes || []).slice()
+  document.querySelectorAll('[data-turmas-auto]').forEach((c) => {
+    gerarSelectorTurmas(c.id, getTurmasSelecionadas(c.id))
+  })
+}
+
+function saeDataServidor(valor) {
+  if (!valor) return null
+  const s = String(valor).trim()
+  const semFuso = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)
+  const d = new Date(semFuso ? s.replace(' ', 'T') + 'Z' : s)
+  return isNaN(d.getTime()) ? null : d
+}
+
+function saeDiaLocal(valor) {
+  const d = saeDataServidor(valor)
+  if (!d) return String(valor || '').slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // Formata a exibição das turmas (ex: ["9º A", "9º B"] -> "9º A e B")
