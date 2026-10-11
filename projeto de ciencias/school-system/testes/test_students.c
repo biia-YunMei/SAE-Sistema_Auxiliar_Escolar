@@ -62,6 +62,10 @@ int main(void)
 
     HttpRequest request = {0};
     HttpResponse response = {0};
+    request.method = "GET";
+    CHECK(ctrl_bootstrap_status(&request, &response) == SUCCESS);
+    CHECK(response.status == 200 && strstr(response.body, "\"available\":true") != NULL);
+    memset(&response, 0, sizeof response);
     request.method = "POST";
     request.body = "{\"name\":\"Coord\",\"phone\":\"+5511999000001\",\"password\":\"senhaSegura1!\",\"bootstrap_key\":\"incorreta\"}";
     CHECK(ctrl_bootstrap_admin(&request, &response) == SUCCESS);
@@ -70,6 +74,11 @@ int main(void)
     request.body = "{\"name\":\"Coord\",\"phone\":\"+5511999000001\",\"password\":\"senhaSegura1!\",\"bootstrap_key\":\"test-setup-key-with-at-least-32-characters-long\"}";
     CHECK(ctrl_bootstrap_admin(&request, &response) == SUCCESS);
     CHECK(response.status == 201);
+    memset(&response, 0, sizeof response);
+    request.method = "GET";
+    CHECK(ctrl_bootstrap_status(&request, &response) == SUCCESS);
+    CHECK(response.status == 200 && strstr(response.body, "\"available\":false") != NULL);
+    request.method = "POST";
     User coordinator;
     CHECK(users_find_by_phone("+5511999000001", &coordinator) == SUCCESS);
     AuthSession coordinator_session;

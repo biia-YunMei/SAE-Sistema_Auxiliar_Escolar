@@ -25,6 +25,8 @@ typedef struct {
     const char *webhook_signature; /* X-Hub-Signature-256, se houver */
     char        auth_storage[512];
     char        webhook_signature_storage[256];
+    char        client_ip_storage[64];
+    const char *client_ip;
     void       *user_ctx;   /* contexto passado no server_run */
     /* Armazenamento da requisição, gerenciado pelo servidor. */
     char       *storage;
@@ -36,7 +38,7 @@ typedef struct {
     const char *body;
     size_t      body_len;
     /* Evita que handlers retornem ponteiros para buffers locais/liberados. */
-    char        body_storage[65536];
+    char        body_storage[262144];
 } HttpResponse;
 
 /* Assinatura de um handler/controller. */

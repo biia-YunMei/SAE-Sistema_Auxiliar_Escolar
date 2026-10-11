@@ -10,6 +10,7 @@
 #include "database.h"
 #include "logger.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -33,17 +34,7 @@ static void users_json_escape(const char *value, char *out, size_t cap)
 
 static int extract_str(const char *b, const char *k, char *o, size_t c)
 {
-    char n[64]; int x = snprintf(n, sizeof n, "\"%s\":\"", k);
-    if (x <= 0 || (size_t)x >= sizeof n) return 0;
-    const char *p = strstr(b, n);
-    if (!p) return 0;
-    p += x;
-    const char *e = strchr(p, '"');
-    if (!e) return 0;
-    size_t l = (size_t)(e - p);
-    if (l >= c) l = c - 1;
-    memcpy(o, p, l); o[l] = '\0';
-    return 1;
+    return json_object_get_string(b, k, o, c);
 }
 
 static int require_coord(const HttpRequest *req, HttpResponse *res, AuthSession *out)
@@ -147,8 +138,10 @@ int ctrl_users_update(const HttpRequest *req, HttpResponse *res, const char *id_
     AuthSession session;
     int rc = require_coord(req, res, &session);
     if (rc != SUCCESS) return rc;
-    long long id = strtoll(id_str, NULL, 10);
-    if (id <= 0) return http_respond_error(res, 400, "invalid id");
+    int64_t parsed_id;
+    if (!parse_int64_strict(id_str, &parsed_id) || parsed_id <= 0)
+        return http_respond_error(res, 400, "invalid id");
+    long long id = (long long)parsed_id;
 
     User current;
     if (users_find_by_id(id, &current) != SUCCESS)
@@ -173,8 +166,10 @@ int ctrl_users_delete(const HttpRequest *req, HttpResponse *res, const char *id_
     AuthSession session;
     int rc = require_coord(req, res, &session);
     if (rc != SUCCESS) return rc;
-    long long id = strtoll(id_str, NULL, 10);
-    if (id <= 0) return http_respond_error(res, 400, "invalid id");
+    int64_t parsed_id;
+    if (!parse_int64_strict(id_str, &parsed_id) || parsed_id <= 0)
+        return http_respond_error(res, 400, "invalid id");
+    long long id = (long long)parsed_id;
     if (id == session.user_id)
         return http_respond_error(res, 400, "cannot delete own user");
     rc = users_delete(id);

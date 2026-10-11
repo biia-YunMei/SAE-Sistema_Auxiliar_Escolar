@@ -100,7 +100,7 @@ static int route_is_public(const Route *route)
     return (strcmp(route->pattern, "/api/health") == 0) ||
            (strcmp(route->pattern, "/api/auth") == 0) ||
            (strcmp(route->pattern, "/api/bootstrap") == 0) ||
-           (strcmp(route->pattern, "/api/whatsapp/webhook") == 0);
+           (strcmp(route->pattern, "/api/bootstrap/status") == 0);
 }
 
 int router_dispatch(const Route *routes, size_t n,

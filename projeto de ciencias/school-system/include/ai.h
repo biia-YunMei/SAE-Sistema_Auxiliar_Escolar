@@ -32,6 +32,8 @@ typedef struct {
 int ai_parse_teacher_message(const char *message, TaskData *out);
 int ai_answer_student_question(const char *question, const char *context,
                                char *response, size_t response_cap);
+/* Normaliza Markdown/LaTeX básico para mensagens de texto, como WhatsApp. */
+void ai_format_student_response(char *response, size_t response_cap);
 /* Indica se a chave e o modelo remoto estão configurados no processo. */
 int ai_remote_enabled(void);
 

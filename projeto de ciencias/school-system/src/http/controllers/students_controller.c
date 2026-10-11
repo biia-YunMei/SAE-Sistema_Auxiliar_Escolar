@@ -6,6 +6,7 @@
 #include "classes.h"
 #include "validation.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,21 +17,7 @@ static long long json_int(const char *body, const char *key);
 
 static int student_field(const char *body, const char *key, char *out, size_t cap)
 {
-    char needle[64];
-    int n = snprintf(needle, sizeof needle, "\"%s\":\"", key);
-    if (!body || n < 0 || (size_t)n >= sizeof needle || !out || cap == 0) return 0;
-    const char *p = strstr(body, needle);
-    if (!p) return 0;
-    p += n;
-    size_t used = 0;
-    while (*p && *p != '"') {
-        if (*p == '\\' && p[1]) ++p;
-        if (used + 1 >= cap) return 0;
-        out[used++] = *p++;
-    }
-    if (*p != '"') return 0;
-    out[used] = '\0';
-    return 1;
+    return json_object_get_string(body, key, out, cap);
 }
 
 static void student_json_string(const char *value, char *out, size_t cap)
@@ -166,12 +153,8 @@ int ctrl_students_list(const HttpRequest *req, HttpResponse *res)
 
 static long long json_int(const char *body, const char *key)
 {
-    char needle[64];
-    int written = snprintf(needle, sizeof needle, "\"%s\":", key);
-    const char *value = body ? strstr(body, needle) : NULL;
-    if (written < 0 || !value) return 0;
-    value += written;
-    return strtoll(value, NULL, 10);
+    int64_t value;
+    return json_object_get_int64(body, key, &value) ? (long long)value : 0;
 }
 
 int ctrl_students_assign_class(const HttpRequest *req, HttpResponse *res)

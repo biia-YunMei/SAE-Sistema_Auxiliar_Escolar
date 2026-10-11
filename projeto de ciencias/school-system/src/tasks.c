@@ -184,17 +184,18 @@ int tasks_delete(int64_t task_id, int64_t acting_teacher_id, bool is_coord)
 static int list_by(const char *sql, int64_t id, bool include_archived,
                    Task **out, size_t *count)
 {
+    enum { MAX_TASKS_IN_MEMORY = 10000 };
     if (!out || !count) return ERROR_INVALID_INPUT;
     *out = NULL; *count = 0;
 
     char final_sql[512];
     if (include_archived)
-        snprintf(final_sql, sizeof final_sql, "%s", sql);
+        snprintf(final_sql, sizeof final_sql, "%s ORDER BY due_date,id;", sql);
     else
         snprintf(final_sql, sizeof final_sql,
                  "SELECT id,teacher_id,class_id,subject,title,description,due_date,"
                  "status,created_at,updated_at FROM (%s) "
-                 "WHERE status='ACTIVE';", sql);
+                 "WHERE status='ACTIVE' ORDER BY due_date,id;", sql);
 
     sqlite3_stmt *st = NULL;
     int rc = db_prepare(final_sql, &st);
@@ -204,8 +205,15 @@ static int list_by(const char *sql, int64_t id, bool include_archived,
     size_t cap = 8, n = 0;
     Task *arr = (Task *)malloc(cap * sizeof(Task));
     if (!arr) { sqlite3_finalize(st); return ERROR_INTERNAL; }
-    while (sqlite3_step(st) == SQLITE_ROW) {
+    int step;
+    while ((step = sqlite3_step(st)) == SQLITE_ROW) {
+        if (n >= MAX_TASKS_IN_MEMORY) {
+            free(arr); sqlite3_finalize(st); return ERROR_TOO_LONG;
+        }
         if (n == cap) {
+            if (cap > SIZE_MAX / 2 / sizeof(Task)) {
+                free(arr); sqlite3_finalize(st); return ERROR_TOO_LONG;
+            }
             cap *= 2;
             Task *p = (Task *)realloc(arr, cap * sizeof(Task));
             if (!p) { free(arr); sqlite3_finalize(st); return ERROR_INTERNAL; }
@@ -214,6 +222,7 @@ static int list_by(const char *sql, int64_t id, bool include_archived,
         fetch_task(st, &arr[n++]);
     }
     sqlite3_finalize(st);
+    if (step != SQLITE_DONE) { free(arr); return ERROR_DATABASE; }
     *out = arr; *count = n;
     return SUCCESS;
 }

@@ -7,6 +7,7 @@
 #include "validation.h"
 #include "logger.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -16,19 +17,7 @@
  * Para a feira de ciências isso basta; a Etapa 7 (cJSON) generaliza. */
 static int extract_field(const char *body, const char *key, char *out, size_t cap)
 {
-    if (!body || !key || !out || cap == 0) return 0;
-    char needle[64]; int n = snprintf(needle, sizeof needle, "\"%s\":\"", key);
-    if (n < 0 || (size_t)n >= sizeof needle) return 0;
-    const char *p = strstr(body, needle);
-    if (!p) return 0;
-    p += n;
-    const char *e = strchr(p, '"');
-    if (!e) return 0;
-    size_t len = (size_t)(e - p);
-    if (len >= cap) len = cap - 1;
-    memcpy(out, p, len);
-    out[len] = '\0';
-    return 1;
+    return json_object_get_string(body, key, out, cap);
 }
 
 int ctrl_auth_login(const HttpRequest *req, HttpResponse *res)
@@ -44,7 +33,8 @@ int ctrl_auth_login(const HttpRequest *req, HttpResponse *res)
     extract_field(req->body, "password", password, sizeof password);
 
     AuthSession s;
-    int rc = auth_login_phone(phone, password[0] ? password : NULL, &s);
+    int rc = auth_login_phone_from_ip(phone, password[0] ? password : NULL,
+                                      req->client_ip, &s);
     if (rc != SUCCESS) {
         if (rc == ERROR_FORBIDDEN)
             return http_respond_error(res, 429, "too many login attempts; try again later");

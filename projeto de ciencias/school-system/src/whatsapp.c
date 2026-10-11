@@ -1,5 +1,6 @@
 /* Canal WhatsApp: entrega, identificacao do usuario e comandos escolares. */
 #include "whatsapp.h"
+#include "anonymous_enrollment.h"
 #include "classes.h"
 #include "ai.h"
 #include "database.h"
@@ -9,6 +10,7 @@
 #include "validation.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,9 +27,14 @@ typedef struct {
     char subject[64], title[121], description[1024], due_date[11];
 } PendingTask;
 
-/* Usado somente para interpretar o texto de tarefa enviado por professor;
- * consulta de aluno nunca aceita turma indicada na mensagem. */
+/* Interpreta a turma indicada por um professor ou em uma consulta escolar. */
 static int class_mentioned(const char *body, Class *classroom);
+static int normalize_class_reference(const char *input, char *out, size_t cap);
+static int student_requests_tasks(const char *text);
+static int student_requests_notices(const char *text);
+static int resolve_class_reference(const char *text, Class *selected,
+                                   char *options, size_t options_cap);
+static int looks_like_class_reference(const char *text);
 
 
 int whatsapp_init(void)
@@ -332,10 +339,21 @@ static int student_tasks_for_class(int64_t class_id, const Class *classroom,
     int exact_tomorrow = contains_ci(query, "amanha") || contains_ci(query, "amanhã");
     int today_only = contains_ci(query, "hoje");
     int week = contains_ci(query, "semana");
-    size_t used = (size_t)snprintf(reply, cap, "Tarefas de %s:\n", classroom->name);
+    int heading = snprintf(reply, cap, "Tarefas de %s:\n", classroom->name);
+    if (heading < 0 || (size_t)heading >= cap) {
+        if (cap) reply[cap - 1] = '\0';
+        free(list);
+        return SUCCESS;
+    }
+    size_t used = (size_t)heading;
     int shown = 0;
-    if (!count) used += (size_t)snprintf(reply + used, cap - used, "Nenhuma tarefa ativa.");
-    for (size_t i = 0; i < count && used + 180 < cap; ++i) {
+    if (!count) {
+        int n = snprintf(reply + used, cap - used, "Nenhuma tarefa ativa.");
+        if (n < 0 || (size_t)n >= cap - used) reply[cap - 1] = '\0';
+        free(list);
+        return SUCCESS;
+    }
+    for (size_t i = 0; i < count && used + 1 < cap; ++i) {
         const char *due = list[i].due_date;
         if ((exact_tomorrow && strcmp(due, tomorrow) != 0) ||
             (today_only && strcmp(due, today) != 0) ||
@@ -345,7 +363,7 @@ static int student_tasks_for_class(int64_t class_id, const Class *classroom,
         int n = snprintf(reply + used, cap - used, "- %s: %s (entrega %s)\n",
             list[i].subject, list[i].description[0] ? list[i].description : list[i].title,
             due);
-        if (n < 0) break;
+        if (n < 0 || (size_t)n >= cap - used) { used = cap - 1; break; }
         used += (size_t)n;
         ++shown;
     }
@@ -368,27 +386,59 @@ static int student_message(const char *body, int64_t assigned_class_id,
         return SUCCESS;
     }
     Class classroom;
-    if (assigned_class_id <= 0 || classes_find_by_id(assigned_class_id, &classroom) != SUCCESS) {
-        snprintf(reply, cap, "De qual turma voce e? (ex.: 9A, 1o EM)");
-        return SUCCESS;
+    int asks_tasks = student_requests_tasks(body);
+    int asks_notices = student_requests_notices(body);
+    if (asks_tasks || asks_notices) {
+        Class requested_class;
+        char options[256] = {0};
+        int class_match = resolve_class_reference(body, &requested_class,
+                                                  options, sizeof options);
+        if (class_match == 2) {
+            snprintf(reply, cap, "Encontrei mais de uma turma para essa série: %s. "
+                     "Qual é a letra da sua turma?", options);
+            return SUCCESS;
+        }
+        if (class_match < 0) return ERROR_DATABASE;
+        if (class_match == 1) {
+            if (assigned_class_id <= 0 ||
+                (int64_t)requested_class.id != assigned_class_id) {
+                snprintf(reply, cap, "Só posso consultar tarefas e avisos da turma vinculada ao seu cadastro.");
+                return SUCCESS;
+            }
+            classroom = requested_class;
+        } else if (looks_like_class_reference(body)) {
+            snprintf(reply, cap, "Essa turma ainda não está cadastrada. "
+                     "Peça à coordenação para cadastrá-la.");
+            return SUCCESS;
+        }
+    }
+    if (assigned_class_id <= 0 || classes_find_by_id(assigned_class_id, &classroom) != SUCCESS ||
+        strcmp(classroom.status, "ACTIVE") != 0) {
+        if (asks_tasks || asks_notices) {
+            snprintf(reply, cap, "De qual turma voce e? (ex.: 9º A, 1º EM)");
+            return SUCCESS;
+        }
+        assigned_class_id = 0;
     }
     const char *question = body;
-    if (contains_ci(question, "tarefa") || contains_ci(question, "atividade") ||
-        prefix_ci(question, "tarefas") || contains_ci(question, "entregar"))
+    if (asks_tasks && assigned_class_id > 0)
         return student_tasks_for_class(assigned_class_id, &classroom, question, reply, cap);
-    if (prefix_ci(question, "recados") || prefix_ci(question, "comunicados") ||
-        contains_ci(question, "aviso")) {
+    if (asks_notices && assigned_class_id > 0) {
         sqlite3_stmt *st = NULL;
-        if (db_prepare("SELECT title,content FROM notices WHERE status='ACTIVE' AND (class_id IS NULL OR class_id=?) ORDER BY id DESC LIMIT 5;", &st) != SUCCESS) {
+        if (db_prepare("SELECT title,content FROM notices WHERE status='ACTIVE' "
+                       "AND publish_date<=date('now','localtime') "
+                       "AND (class_id IS NULL OR class_id=?) ORDER BY publish_date DESC,id DESC LIMIT 5;", &st) != SUCCESS) {
             snprintf(reply, cap, "Nao consegui consultar os comunicados agora."); return SUCCESS;
         }
         db_bind_int64(st, 1, (long long)assigned_class_id);
         size_t used = (size_t)snprintf(reply, cap, "Comunicados de %s:\n", classroom.name);
         int count = 0;
-        while (sqlite3_step(st) == SQLITE_ROW && used + 180 < cap) {
+        while (used + 1 < cap) {
+            int step = sqlite3_step(st);
+            if (step != SQLITE_ROW) break;
             int n = snprintf(reply + used, cap - used, "- %s: %s\n",
                 (const char *)sqlite3_column_text(st, 0), (const char *)sqlite3_column_text(st, 1));
-            if (n < 0) break;
+            if (n < 0 || (size_t)n >= cap - used) { used = cap - 1; break; }
             used += (size_t)n;
             ++count;
         }
@@ -396,19 +446,525 @@ static int student_message(const char *body, int64_t assigned_class_id,
         if (!count) snprintf(reply + used, cap - used, "Nenhum comunicado ativo.");
         return SUCCESS;
     }
-    Task *tasks = NULL; size_t count = 0; char context[900] = {0};
-    if (tasks_list_by_class(assigned_class_id, false, &tasks, &count) == SUCCESS && count) {
-        size_t used = 0;
-        for (size_t i = 0; i < count && used + 100 < sizeof context; ++i)
-            used += (size_t)snprintf(context + used, sizeof context - used, "%s%s: %s", i ? "; " : "", tasks[i].subject, tasks[i].title);
-    }
-    free(tasks);
+    char context[1500] = {0};
+    whatsapp_build_school_context_for_class(assigned_class_id, context, sizeof context);
     int ai_rc = ai_answer_student_question(question, context, reply, cap);
     if (ai_rc != SUCCESS || !reply[0]) {
-        snprintf(reply, cap,
-                 "Nao consegui preparar uma resposta agora. Tente novamente em alguns instantes.");
+        /* Falha remota é transitória: não enviar fallback como se fosse
+         * resposta válida nem deixar o worker marcar a mensagem como atendida. */
+        reply[0] = '\0';
+        return ai_rc == SUCCESS ? ERROR_AI : ai_rc;
     }
+    static const char disclaimer[] = "\n\nResposta feita por IA — pode errar. Confira com seu professor.";
+    size_t used = strlen(reply), suffix = sizeof disclaimer - 1;
+    if (used + suffix < cap) memcpy(reply + used, disclaimer, suffix + 1);
     return SUCCESS;
+}
+
+/* Normaliza referências de turma sem depender da IA: "9º ano", "9° ano",
+ * "nono ano" e "9 A" podem representar a mesma turma. */
+static int class_word_is_ignored(const char *word)
+{
+    static const char *ignored[] = {
+        "ano", "anos", "serie", "series", "turma", "do", "da", "de",
+        "meu", "minha", "meus", "minhas", "sou", "aluno", "aluna",
+        "estudo", "estou", "no", "na", "classe", "sala"
+    };
+    for (size_t i = 0; i < sizeof ignored / sizeof ignored[0]; ++i)
+        if (strcmp(word, ignored[i]) == 0) return 1;
+    return 0;
+}
+
+static const char *class_ordinal_digit(const char *word)
+{
+    static const struct { const char *word, *digit; } ordinals[] = {
+        {"primeiro", "1"}, {"primeira", "1"}, {"primeiros", "1"}, {"primeiras", "1"},
+        {"segundo", "2"}, {"segunda", "2"}, {"segundos", "2"}, {"segundas", "2"},
+        {"terceiro", "3"}, {"terceira", "3"}, {"terceiros", "3"}, {"terceiras", "3"},
+        {"quarto", "4"}, {"quarta", "4"}, {"quartos", "4"}, {"quartas", "4"},
+        {"quinto", "5"}, {"quinta", "5"}, {"quintos", "5"}, {"quintas", "5"},
+        {"sexto", "6"}, {"sexta", "6"}, {"sextos", "6"}, {"sextas", "6"},
+        {"setimo", "7"}, {"setima", "7"}, {"setimos", "7"}, {"setimas", "7"},
+        {"oitavo", "8"}, {"oitava", "8"}, {"oitavos", "8"}, {"oitavas", "8"},
+        {"nono", "9"}, {"nona", "9"}, {"nonos", "9"}, {"nonas", "9"},
+        {"decimo", "10"}, {"decima", "10"}, {"decimos", "10"}, {"decimas", "10"}
+    };
+    for (size_t i = 0; i < sizeof ordinals / sizeof ordinals[0]; ++i)
+        if (strcmp(word, ordinals[i].word) == 0) return ordinals[i].digit;
+    return NULL;
+}
+
+static int class_append(char *out, size_t cap, size_t *used, const char *text)
+{
+    size_t length = strlen(text);
+    if (length >= cap - *used) return 0;
+    memcpy(out + *used, text, length);
+    *used += length;
+    out[*used] = '\0';
+    return 1;
+}
+
+static int class_flush_word(char *word, char *out, size_t cap, size_t *used)
+{
+    if (!word[0]) return 1;
+    const char *replacement = class_ordinal_digit(word);
+    if (replacement) {
+        word[0] = '\0';
+        return class_append(out, cap, used, replacement);
+    }
+    if (class_word_is_ignored(word)) {
+        word[0] = '\0';
+        return 1;
+    }
+
+    /* Também aceita formas digitadas sem espaço: "9oano" e "9ano". */
+    size_t digits = 0;
+    while (isdigit((unsigned char)word[digits])) ++digits;
+    if (digits > 0 && word[digits]) {
+        const char *tail = word + digits;
+        if (strcmp(tail, "ano") == 0 || strcmp(tail, "anos") == 0 ||
+            strcmp(tail, "o") == 0 || strcmp(tail, "oano") == 0 ||
+            strcmp(tail, "oanos") == 0 || strcmp(tail, "aserie") == 0 ||
+            strcmp(tail, "aseries") == 0)
+            word[digits] = '\0';
+    }
+    int ok = class_append(out, cap, used, word);
+    word[0] = '\0';
+    return ok;
+}
+
+static char class_ascii_letter(unsigned char first, unsigned char second)
+{
+    if (first != 0xC3) return '\0';
+    if (second >= 0x80 && second <= 0x85) return 'a';
+    if (second == 0x87) return 'c';
+    if (second >= 0x88 && second <= 0x8B) return 'e';
+    if (second >= 0x8C && second <= 0x8F) return 'i';
+    if (second == 0x91) return 'n';
+    if (second >= 0x92 && second <= 0x96) return 'o';
+    if (second >= 0x99 && second <= 0x9C) return 'u';
+    if (second == 0x9D || second == 0xBF) return 'y';
+    if (second >= 0xA0 && second <= 0xA5) return 'a';
+    if (second == 0xA7) return 'c';
+    if (second >= 0xA8 && second <= 0xAB) return 'e';
+    if (second >= 0xAC && second <= 0xAF) return 'i';
+    if (second == 0xB1) return 'n';
+    if (second >= 0xB2 && second <= 0xB6) return 'o';
+    if (second >= 0xB9 && second <= 0xBC) return 'u';
+    if (second == 0xBD) return 'y';
+    return '\0';
+}
+
+static int normalize_class_reference(const char *input, char *out, size_t cap)
+{
+    if (!input || !out || cap < 2) return 0;
+    out[0] = '\0';
+    size_t used = 0, word_used = 0;
+    char word[64] = {0};
+    const unsigned char *p = (const unsigned char *)input;
+    while (*p) {
+        unsigned char ch = *p++;
+        char normalized = '\0';
+        if (ch < 0x80) {
+            if (isalnum(ch)) normalized = (char)tolower(ch);
+        } else if (ch == 0xC2 && (*p == 0xB0 || *p == 0xBA || *p == 0xAA)) {
+            /* Graus e indicadores ordinais separam o número da palavra seguinte. */
+            ++p;
+        } else if (ch == 0xC3 && *p) {
+            normalized = class_ascii_letter(ch, *p++);
+        } else if ((ch & 0xE0) == 0xC0 && *p) {
+            ++p;
+        } else if ((ch & 0xF0) == 0xE0 && p[0] && p[1]) {
+            p += 2;
+        } else if ((ch & 0xF8) == 0xF0 && p[0] && p[1] && p[2]) {
+            p += 3;
+        }
+
+        if (normalized) {
+            if (word_used + 1 >= sizeof word) return 0;
+            word[word_used++] = normalized;
+            word[word_used] = '\0';
+        } else if (!class_flush_word(word, out, cap, &used)) {
+            return 0;
+        } else {
+            word_used = 0;
+        }
+    }
+    if (!class_flush_word(word, out, cap, &used)) return 0;
+    return used > 0;
+}
+
+static int normalize_keyword_text(const char *input, char *out, size_t cap)
+{
+    if (!input || !out || cap < 2) return 0;
+    size_t used = 0;
+    out[0] = '\0';
+    const unsigned char *p = (const unsigned char *)input;
+    while (*p) {
+        unsigned char ch = *p++;
+        char normalized = '\0';
+        if (ch < 0x80) {
+            if (isalnum(ch)) normalized = (char)tolower(ch);
+        } else if (ch == 0xC2 && *p) {
+            ++p;
+        } else if (ch == 0xC3 && *p) {
+            normalized = class_ascii_letter(ch, *p++);
+        } else if ((ch & 0xE0) == 0xC0 && *p) {
+            ++p;
+        } else if ((ch & 0xF0) == 0xE0 && p[0] && p[1]) {
+            p += 2;
+        } else if ((ch & 0xF8) == 0xF0 && p[0] && p[1] && p[2]) {
+            p += 3;
+        }
+        if (normalized) {
+            if (used + 1 >= cap) return 0;
+            out[used++] = normalized;
+        } else if (used > 0 && out[used - 1] != ' ') {
+            if (used + 1 >= cap) return 0;
+            out[used++] = ' ';
+        }
+    }
+    while (used && out[used - 1] == ' ') --used;
+    out[used] = '\0';
+    return used > 0;
+}
+
+static int keyword_token_matches(const char *token, size_t token_len,
+                                 const char *term, size_t term_len)
+{
+    if (token_len == term_len && memcmp(token, term, term_len) == 0) return 1;
+    if (token_len == term_len + 1 && token[token_len - 1] == 's' &&
+        memcmp(token, term, term_len) == 0) return 1;
+    return token_len == term_len + 2 && token[token_len - 2] == 'e' &&
+        token[token_len - 1] == 's' && memcmp(token, term, term_len) == 0;
+}
+
+static int text_mentions_any(const char *text, const char *const *terms, size_t count)
+{
+    char folded_text[8192] = {0};
+    if (!normalize_keyword_text(text, folded_text, sizeof folded_text)) return 0;
+    for (size_t i = 0; i < count; ++i) {
+        char folded_term[128] = {0};
+        if (!normalize_keyword_text(terms[i], folded_term, sizeof folded_term)) continue;
+        size_t term_len = strlen(folded_term);
+        const char *p = folded_text;
+        while (*p) {
+            while (*p == ' ') ++p;
+            const char *end = p;
+            while (*end && *end != ' ') ++end;
+            if (keyword_token_matches(p, (size_t)(end - p), folded_term, term_len)) return 1;
+            p = end;
+        }
+    }
+    return 0;
+}
+
+static int student_requests_tasks(const char *text)
+{
+    static const char *terms[] = {
+        "tarefa", "atividade", "dever", "licao", "trabalho", "prova",
+        "avaliacao", "entregar", "entrega", "pendente", "exercicio", "prazo"
+    };
+    return text_mentions_any(text, terms, sizeof terms / sizeof terms[0]);
+}
+
+static int student_requests_notices(const char *text)
+{
+    static const char *terms[] = {
+        "aviso", "recado", "comunicado", "noticia", "novidade", "evento",
+        "informacao", "calendario"
+    };
+    return text_mentions_any(text, terms, sizeof terms / sizeof terms[0]);
+}
+
+static int class_numeric_stem(const char *key, char *out, size_t cap)
+{
+    size_t length = 0;
+    while (key[length] && isdigit((unsigned char)key[length])) ++length;
+    if (length == 0 || length >= cap) return 0;
+    memcpy(out, key, length);
+    out[length] = '\0';
+    return 1;
+}
+
+static int parse_class_id_key(const char *key, int64_t *id)
+{
+    const char *digits = key;
+    if (strncmp(key, "turmaid", 7) == 0) digits = key + 7;
+    else if (strncmp(key, "codigo", 6) == 0) digits = key + 6;
+    else if (strncmp(key, "id", 2) == 0) digits = key + 2;
+    else return 0;
+    if (!*digits) return 0;
+    for (const char *p = digits; *p; ++p)
+        if (!isdigit((unsigned char)*p)) return 0;
+    errno = 0;
+    char *end = NULL;
+    long long value = strtoll(digits, &end, 10);
+    if (errno == ERANGE || !end || *end || value <= 0) return 0;
+    *id = (int64_t)value;
+    return 1;
+}
+
+static int parse_numeric_class_id(const char *key, int64_t *id)
+{
+    if (!key || !*key) return 0;
+    for (const char *p = key; *p; ++p)
+        if (!isdigit((unsigned char)*p)) return 0;
+    errno = 0;
+    char *end = NULL;
+    long long value = strtoll(key, &end, 10);
+    if (errno == ERANGE || !end || *end || value <= 0) return 0;
+    *id = (int64_t)value;
+    return 1;
+}
+
+static int is_plain_numeric_reference(const char *text)
+{
+    if (!text) return 0;
+    while (isspace((unsigned char)*text)) ++text;
+    if (!isdigit((unsigned char)*text)) return 0;
+    while (isdigit((unsigned char)*text)) ++text;
+    while (isspace((unsigned char)*text)) ++text;
+    return *text == '\0';
+}
+
+static const char *class_find_ci(const char *text, const char *part)
+{
+    if (!text || !part || !*part) return NULL;
+    for (const char *p = text; *p; ++p)
+        if (prefix_ci(p, part)) return p;
+    return NULL;
+}
+
+static int class_equal_ci_n(const char *a, const char *b, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return 0;
+    return 1;
+}
+
+static size_t class_reference_variants(const char *text, char variants[][256], size_t cap)
+{
+    if (!text || cap == 0) return 0;
+    size_t count = 1;
+    snprintf(variants[0], 256, "%s", text);
+    static const char *markers[] = {
+        "turma", "sou do ", "sou da ", "estudo no ", "estudo na ",
+        "estou no ", "estou na ", "minha sala ", "minha classe ",
+        "sou aluno do ", "sou aluna do ", "faco parte do ", "faço parte do ",
+        "faco parte da ", "faço parte da ", "estudo em "
+    };
+    for (size_t i = 0; i < sizeof markers / sizeof markers[0] && count < cap; ++i) {
+        const char *marker = class_find_ci(text, markers[i]);
+        if (!marker) continue;
+        const char *value = marker + strlen(markers[i]);
+        while (*value && (isspace((unsigned char)*value) || *value == ':' ||
+                          *value == '=' || *value == '#')) ++value;
+        if (prefix_ci(value, "e ")) value += 2;
+        else if ((unsigned char)value[0] == 0xC3 && (unsigned char)value[1] == 0xA9 &&
+                 isspace((unsigned char)value[2])) value += 3;
+        size_t value_len = strcspn(value, ",.!?;\n");
+        if (value_len == 0 || value_len >= 256) continue;
+        int duplicate = 0;
+        for (size_t j = 0; j < count; ++j)
+            if (strlen(variants[j]) == value_len &&
+                class_equal_ci_n(variants[j], value, value_len)) duplicate = 1;
+        if (!duplicate) {
+            memcpy(variants[count], value, value_len);
+            variants[count][value_len] = '\0';
+            ++count;
+        }
+    }
+    return count;
+}
+
+/* 1=achou, 2=ambígua, 0=não reconhecida, -1=erro de banco/memória. */
+static int resolve_class_reference(const char *text, Class *selected,
+                                   char *options, size_t options_cap)
+{
+    char variants[10][256] = {{0}};
+    size_t variant_count = class_reference_variants(text, variants, 10);
+    if (!variant_count) return 0;
+    char keys[10][256] = {{0}};
+    for (size_t i = 0; i < variant_count; ++i)
+        (void)normalize_class_reference(variants[i], keys[i], sizeof keys[i]);
+
+    /* Um ID explícito identifica a turma sem depender do nome exibido. */
+    int64_t requested_id = 0;
+    for (size_t i = 0; i < variant_count; ++i) {
+        if (parse_class_id_key(keys[i], &requested_id)) {
+            Class found;
+            if (classes_find_by_id(requested_id, &found) == SUCCESS &&
+                strcmp(found.status, "ACTIVE") == 0) {
+                *selected = found;
+                return 1;
+            }
+            return 0;
+        }
+    }
+
+    Class *classes = NULL;
+    size_t class_count = 0;
+    if (classes_list(&classes, &class_count) != SUCCESS) return -1;
+    Class *matches = calloc(class_count ? class_count : 1, sizeof *matches);
+    if (!matches) { free(classes); return -1; }
+    size_t match_count = 0;
+    for (size_t i = 0; i < class_count; ++i) {
+        if (strcmp(classes[i].status, "ACTIVE") != 0) continue;
+        char name_key[256] = {0}, grade_key[256] = {0};
+        (void)normalize_class_reference(classes[i].name, name_key, sizeof name_key);
+        (void)normalize_class_reference(classes[i].grade, grade_key, sizeof grade_key);
+        char name_stem[32] = {0}, grade_stem[32] = {0};
+        (void)class_numeric_stem(name_key, name_stem, sizeof name_stem);
+        (void)class_numeric_stem(grade_key, grade_stem, sizeof grade_stem);
+        int matched = 0;
+        for (size_t v = 0; v < variant_count && !matched; ++v) {
+            if (!keys[v][0]) continue;
+            const char *key = keys[v];
+            if (key[0] == 'e' && isdigit((unsigned char)key[1])) ++key;
+            matched = strcmp(key, name_key) == 0 || strcmp(key, grade_key) == 0;
+            if (!matched && !strpbrk(key, "abcdefghijklmnopqrstuvwxyz")) {
+                matched = (name_stem[0] && strcmp(key, name_stem) == 0) ||
+                          (grade_stem[0] && strcmp(key, grade_stem) == 0);
+            }
+        }
+        if (matched) matches[match_count++] = classes[i];
+    }
+    free(classes);
+
+    if (match_count == 0) {
+        if (is_plain_numeric_reference(text) &&
+            parse_numeric_class_id(keys[0], &requested_id)) {
+            Class found;
+            if (classes_find_by_id(requested_id, &found) == SUCCESS &&
+                strcmp(found.status, "ACTIVE") == 0) {
+                *selected = found;
+                free(matches);
+                return 1;
+            }
+        }
+        free(matches);
+        return 0;
+    }
+    if (match_count == 1) {
+        *selected = matches[0];
+        free(matches);
+        return 1;
+    }
+
+    if (options && options_cap) {
+        size_t used = 0;
+        options[0] = '\0';
+        for (size_t i = 0; i < match_count; ++i) {
+            int n = snprintf(options + used, options_cap - used, "%s%s",
+                             i ? ", " : "", matches[i].name);
+            if (n < 0 || (size_t)n >= options_cap - used) break;
+            used += (size_t)n;
+        }
+    }
+    free(matches);
+    return 2;
+}
+
+void whatsapp_build_school_context_for_class(int64_t class_id, char *out, size_t cap)
+{
+    if (!out || cap == 0) return;
+    out[0] = '\0';
+    char today[11] = "0000-00-00";
+    time_t now = time(NULL);
+    struct tm local_now;
+#if defined(_WIN32)
+    if (localtime_s(&local_now, &now) == 0)
+#else
+    if (localtime_r(&now, &local_now))
+#endif
+        (void)strftime(today, sizeof today, "%Y-%m-%d", &local_now);
+
+    Class *classes = NULL;
+    size_t class_count = 0;
+    if (classes_list(&classes, &class_count) != SUCCESS) {
+        snprintf(out, cap, "Dados escolares indisponíveis.");
+        return;
+    }
+    int n = snprintf(out, cap, "Turmas cadastradas:");
+    if (n < 0 || (size_t)n >= cap) {
+        if (cap) out[cap - 1] = '\0';
+        free(classes);
+        return;
+    }
+    size_t used = (size_t)n;
+    int active_count = 0;
+    for (size_t i = 0; i < class_count; ++i) {
+        if (strcmp(classes[i].status, "ACTIVE") != 0) continue;
+        n = snprintf(out + used, cap - used, " %s (ID %lld);",
+                     classes[i].name, (long long)classes[i].id);
+        if (n < 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            free(classes);
+            return;
+        }
+        used += (size_t)n;
+        ++active_count;
+    }
+    if (!active_count) {
+        n = snprintf(out + used, cap - used, " nenhuma turma ativa.");
+        if (n < 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            free(classes);
+            return;
+        }
+        used += (size_t)n;
+    }
+
+    for (size_t i = 0; i < class_count && used + 1 < cap; ++i) {
+        if (strcmp(classes[i].status, "ACTIVE") != 0) continue;
+        if (class_id <= 0 || classes[i].id != class_id) continue;
+        Task *tasks = NULL;
+        size_t task_count = 0;
+        if (tasks_list_by_class(classes[i].id, false, &tasks, &task_count) != SUCCESS)
+            continue;
+        int shown = 0;
+        for (size_t j = 0; j < task_count && shown < 5; ++j) {
+            if (tasks[j].due_date[0] && strcmp(tasks[j].due_date, today) < 0) continue;
+            const char *description = tasks[j].description[0]
+                ? tasks[j].description : tasks[j].title;
+            n = snprintf(out + used, cap - used,
+                         "\nTarefa da turma %s: %s - %s (entrega %s)",
+                         classes[i].name, tasks[j].subject, description,
+                         tasks[j].due_date[0] ? tasks[j].due_date : "sem data");
+            if (n < 0 || (size_t)n >= cap - used) {
+                out[cap - 1] = '\0';
+                free(tasks);
+                free(classes);
+                return;
+            }
+            used += (size_t)n;
+            ++shown;
+        }
+        free(tasks);
+    }
+    free(classes);
+}
+
+void whatsapp_build_school_context(char *out, size_t cap)
+{
+    /* Sem vínculo verificado, o contexto pode listar turmas, mas nunca tarefas. */
+    whatsapp_build_school_context_for_class(0, out, cap);
+}
+
+static int looks_like_class_reference(const char *text)
+{
+    if (!text || strlen(text) > 80 || strchr(text, '?') || strchr(text, '\n')) return 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p; ++p)
+        if (isdigit(*p)) return 1;
+    static const char *hints[] = {
+        "ano", "serie", "série", "turma", "codigo", "código", "id", "primeir",
+        "segund", "terceir", "quart", "quint", "sext", "setim", "sétim",
+        "oitav", "non", "decim", "décim"
+    };
+    for (size_t i = 0; i < sizeof hints / sizeof hints[0]; ++i)
+        if (contains_ci(text, hints[i])) return 1;
+    return 0;
 }
 
 
@@ -419,6 +975,159 @@ static int anonymous_student_message(const char *phone, const char *body, char *
     snprintf(reply, cap,
         "Este numero nao esta cadastrado como aluno. Peça a coordenacao para cadastrar seu nome, telefone e turma.");
     return SUCCESS;
+}
+
+static int enrollment_code_from_message(const char *body, char out[32])
+{
+    const char *p = body;
+    while (*p == ' ' || *p == '\t') ++p;
+    int command = 0;
+    if (prefix_ci(p, "codigo")) { p += 6; command = 1; }
+    else if (strncmp(p, "código", strlen("código")) == 0) {
+        p += strlen("código"); command = 1;
+    } else if (prefix_ci(p, "cadastrar")) { p += 9; command = 1; }
+    if (command) {
+        while (*p == ' ' || *p == '\t' || *p == ':' || *p == '-') ++p;
+    }
+    size_t used = 0;
+    for (; *p; ++p) {
+        if (*p == ' ' || *p == '\t' || *p == '-') continue;
+        if (!isalnum((unsigned char)*p) || used + 1 >= 32) return command ? -1 : 0;
+        out[used++] = (char)toupper((unsigned char)*p);
+    }
+    out[used] = '\0';
+    return (command || used == 16) ? 1 : 0;
+}
+
+int whatsapp_receive_anonymous_message(const char *from_ref, const char *body,
+                                       char *reply, size_t cap)
+{
+    if (!from_ref || !*from_ref || strlen(from_ref) >= 80 || !body || !*body ||
+        !reply || cap == 0 || strlen(body) > 4000)
+        return ERROR_INVALID_INPUT;
+    for (const unsigned char *p = (const unsigned char *)from_ref; *p; ++p)
+        if (!(isalnum(*p) || *p == '_' || *p == '-')) return ERROR_INVALID_INPUT;
+
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("SELECT COALESCE(class_id,0),COALESCE(pending_question,''),COALESCE(class_verified,0) "
+                   "FROM anonymous_students WHERE phone=?;", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, from_ref);
+    int exists = sqlite3_step(st) == SQLITE_ROW;
+    long long class_id = exists ? sqlite3_column_int64(st, 0) : 0;
+    int class_verified = exists ? sqlite3_column_int(st, 2) : 0;
+    char pending[4001] = {0};
+    if (exists) snprintf(pending, sizeof pending, "%s", (const char *)sqlite3_column_text(st, 1));
+    sqlite3_finalize(st);
+
+    if (!class_verified) {
+        char code[32] = {0};
+        int has_code = enrollment_code_from_message(body, code);
+        if (has_code) {
+            int64_t claimed_class_id = 0;
+            int claim_rc = has_code < 0 ? ERROR_NOT_FOUND
+                : anonymous_enrollment_claim(from_ref, code, &claimed_class_id);
+            if (claim_rc != SUCCESS) {
+                snprintf(reply, cap, "Código inválido, expirado ou já utilizado. Peça outro à coordenação e envie: CÓDIGO <código>.");
+                return SUCCESS;
+            }
+            Class classroom;
+            if (classes_find_by_id(claimed_class_id, &classroom) != SUCCESS) {
+                snprintf(reply, cap, "Código aceito, mas não consegui carregar sua turma agora.");
+                return SUCCESS;
+            }
+            int n = snprintf(reply, cap, "Turma vinculada: %s.\n", classroom.name);
+            if (n < 0 || (size_t)n >= cap) return SUCCESS;
+            if (pending[0]) {
+                (void)student_message(pending, claimed_class_id,
+                                      reply + (size_t)n, cap - (size_t)n);
+            }
+            return SUCCESS;
+        }
+        if (pending[0] && (prefix_ci(body, "cancelar") || prefix_ci(body, "sair"))) {
+            if (db_prepare("UPDATE anonymous_students SET pending_question=NULL,updated_at=datetime('now') WHERE phone=?;", &st) != SUCCESS)
+                return ERROR_DATABASE;
+            db_bind_text(st, 1, from_ref);
+            int cleared = sqlite3_step(st) == SQLITE_DONE;
+            sqlite3_finalize(st);
+            if (!cleared) return ERROR_DATABASE;
+            snprintf(reply, cap, "Consulta cancelada.");
+            return SUCCESS;
+        }
+        if (student_requests_tasks(body) || student_requests_notices(body)) {
+            if (db_prepare("INSERT INTO anonymous_students(phone,class_id,class_verified,pending_question) "
+                           "VALUES(?,NULL,0,?) ON CONFLICT(phone) DO UPDATE SET "
+                           "class_id=NULL,class_verified=0,pending_question=excluded.pending_question,updated_at=datetime('now');", &st) != SUCCESS)
+                return ERROR_DATABASE;
+            db_bind_text(st, 1, from_ref);
+            db_bind_text(st, 2, body);
+            int saved = sqlite3_step(st) == SQLITE_DONE;
+            sqlite3_finalize(st);
+            if (!saved) return ERROR_DATABASE;
+            snprintf(reply, cap, "Para consultar tarefas e avisos da sua turma, peça um código à coordenação e envie: CÓDIGO <código>.");
+            return SUCCESS;
+        }
+        return student_message(body, 0, reply, cap);
+    }
+
+    /* Older installs may retain a pending class-selection prompt. Never use a
+     * free-form WhatsApp reply to change a verified student's class. */
+    if (pending[0]) {
+        if (db_prepare("UPDATE anonymous_students SET pending_question=NULL,updated_at=datetime('now') WHERE phone=?;", &st) != SUCCESS)
+            return ERROR_DATABASE;
+        db_bind_text(st, 1, from_ref);
+        int cleared = sqlite3_step(st) == SQLITE_DONE;
+        sqlite3_finalize(st);
+        if (!cleared) return ERROR_DATABASE;
+    }
+    if (class_id <= 0) {
+        snprintf(reply, cap, "Para consultar informações da sua turma, peça um código à coordenação e envie: CÓDIGO <código>.");
+        return SUCCESS;
+    }
+
+    return student_message(body, class_id, reply, cap);
+}
+
+int whatsapp_store_anonymous_inbox_message(const char *message_id,
+                                           const char *from_ref,
+                                           const char *body,
+                                           const char *kind)
+{
+    if (!message_id || !*message_id || strlen(message_id) >= 64 ||
+        !from_ref || !*from_ref || strlen(from_ref) >= 80 ||
+        !body || !*body || strlen(body) > 4000)
+        return ERROR_INVALID_INPUT;
+    const char *type = "OTHER";
+    if (kind && strcmp(kind, "text") == 0) type = "TEXT";
+    else if (kind && strcmp(kind, "audio") == 0) type = "AUDIO";
+    else if (kind && strcmp(kind, "image") == 0) type = "IMAGE";
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("INSERT OR IGNORE INTO messages(external_id,sender_phone,user_type,content,msg_type,status) "
+                   "VALUES(?,?,'ANONYMOUS',?,?, 'RECEIVED');", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, message_id);
+    db_bind_text(st, 2, from_ref);
+    db_bind_text(st, 3, body);
+    db_bind_text(st, 4, type);
+    int saved = sqlite3_step(st) == SQLITE_DONE;
+    sqlite3_finalize(st);
+    return saved ? SUCCESS : ERROR_DATABASE;
+}
+
+int whatsapp_mark_anonymous_inbox_message(const char *message_id, const char *status)
+{
+    if (!message_id || !*message_id || strlen(message_id) >= 64 ||
+        !status || (strcmp(status, "PROCESSED") != 0 && strcmp(status, "FAILED") != 0 &&
+                    strcmp(status, "IGNORED") != 0))
+        return ERROR_INVALID_INPUT;
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("UPDATE messages SET status=? WHERE external_id=?;", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, status);
+    db_bind_text(st, 2, message_id);
+    int saved = sqlite3_step(st) == SQLITE_DONE;
+    sqlite3_finalize(st);
+    return saved ? SUCCESS : ERROR_DATABASE;
 }
 
 static int coordinator_notice_message(const char *phone, int64_t author_id,

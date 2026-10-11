@@ -13,6 +13,7 @@
 #include "validation.h"
 #include "logger.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -36,29 +37,18 @@ static void class_json_escape(const char *value, char *out, size_t cap)
 
 static int extract_str(const char *b, const char *k, char *o, size_t c)
 {
-    char n[64]; int x = snprintf(n, sizeof n, "\"%s\":\"", k);
-    if (x <= 0 || (size_t)x >= sizeof n) return 0;
-    const char *p = strstr(b, n);
-    if (!p) return 0;
-    p += x;
-    const char *e = strchr(p, '"');
-    if (!e) return 0;
-    size_t l = (size_t)(e - p);
-    if (l >= c) l = c - 1;
-    memcpy(o, p, l); o[l] = '\0';
-    return 1;
+    return json_object_get_string(b, k, o, c);
 }
 static long long extract_int(const char *b, const char *k, long long d)
 {
-    char n[64]; int x = snprintf(n, sizeof n, "\"%s\":", k);
-    if (x <= 0 || (size_t)x >= sizeof n) return d;
-    const char *p = strstr(b, n);
-    if (!p) return d;
-    p += x;
-    while (*p == ' ' || *p == '\t') p++;
-    char *end = NULL;
-    long long v = strtoll(p, &end, 10);
-    return (end == p) ? d : v;
+    int64_t value;
+    return json_object_get_int64(b, k, &value) ? (long long)value : d;
+}
+
+static int valid_shift(const char *shift)
+{
+    return shift && (strcmp(shift, "MORNING") == 0 || strcmp(shift, "AFTERNOON") == 0 ||
+                     strcmp(shift, "EVENING") == 0 || strcmp(shift, "FULL") == 0);
 }
 static int require_coord(const HttpRequest *req, HttpResponse *res, AuthSession *out)
 {
@@ -160,6 +150,8 @@ int ctrl_classes_create(const HttpRequest *req, HttpResponse *res)
     if (!extract_str(req->body, "name",  name,  sizeof name))  return http_respond_error(res, 400, "name required");
     if (!extract_str(req->body, "grade", grade, sizeof grade)) return http_respond_error(res, 400, "grade required");
     extract_str(req->body, "shift", shift_s, sizeof shift_s);
+    if (shift_s[0] && !valid_shift(shift_s))
+        return http_respond_error(res, 400, "invalid shift");
 
     Class c;
     rc = classes_create(name, grade, class_shift_from(shift_s[0] ? shift_s : "MORNING"), &c);
@@ -181,8 +173,10 @@ int ctrl_classes_update(const HttpRequest *req, HttpResponse *res, const char *i
     int rc = require_coord(req, res, &session);
     if (rc != SUCCESS) return rc;
 
-    long long class_id = strtoll(id_str, NULL, 10);
-    if (class_id <= 0) return http_respond_error(res, 400, "id required");
+    int64_t parsed_class_id;
+    if (!parse_int64_strict(id_str, &parsed_class_id) || parsed_class_id <= 0)
+        return http_respond_error(res, 400, "id required");
+    long long class_id = (long long)parsed_class_id;
 
     char name[64] = {0}, grade[32] = {0}, shift_s[16] = {0};
     if (!extract_str(req->body, "name", name, sizeof name))
@@ -191,6 +185,8 @@ int ctrl_classes_update(const HttpRequest *req, HttpResponse *res, const char *i
         return http_respond_error(res, 400, "grade required");
     if (!extract_str(req->body, "shift", shift_s, sizeof shift_s))
         return http_respond_error(res, 400, "shift required");
+    if (!valid_shift(shift_s))
+        return http_respond_error(res, 400, "invalid shift");
 
     Class updated;
     rc = classes_update(class_id, name, grade, class_shift_from(shift_s), &updated);
@@ -206,12 +202,14 @@ int ctrl_classes_delete(const HttpRequest *req, HttpResponse *res, const char *i
     int rc = require_coord(req, res, &session);
     if (rc != SUCCESS) return rc;
 
-    long long class_id = strtoll(id_str, NULL, 10);
-    if (class_id <= 0) return http_respond_error(res, 400, "id required");
+    int64_t parsed_class_id;
+    if (!parse_int64_strict(id_str, &parsed_class_id) || parsed_class_id <= 0)
+        return http_respond_error(res, 400, "id required");
+    long long class_id = (long long)parsed_class_id;
     rc = classes_delete(class_id);
     if (rc == ERROR_NOT_FOUND) return http_respond_error(res, 404, "class not found");
     if (rc != SUCCESS) return http_respond_error(res, 400, "delete failed");
-    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"class deleted\"}");
+    return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"class deactivated\"}");
 }
 
 int ctrl_classes_add_teacher(const HttpRequest *req, HttpResponse *res, const char *id_str)
@@ -220,7 +218,10 @@ int ctrl_classes_add_teacher(const HttpRequest *req, HttpResponse *res, const ch
     int rc = require_coord(req, res, &s);
     if (rc != SUCCESS) return rc;
 
-    long long class_id = strtoll(id_str, NULL, 10);
+    int64_t parsed_class_id;
+    if (!parse_int64_strict(id_str, &parsed_class_id) || parsed_class_id <= 0)
+        return http_respond_error(res, 400, "ids required");
+    long long class_id = (long long)parsed_class_id;
     long long teacher_id = extract_int(req->body, "teacher_id", -1);
     long long teacher_user_id = extract_int(req->body, "teacher_user_id", -1);
     if (teacher_user_id > 0) {
@@ -248,8 +249,12 @@ int ctrl_classes_remove_teacher(const HttpRequest *req, HttpResponse *res,
     int rc = require_coord(req, res, &s);
     if (rc != SUCCESS) return rc;
 
-    long long class_id   = strtoll(class_id_str,   NULL, 10);
-    long long teacher_id = strtoll(teacher_id_str, NULL, 10);
+    int64_t parsed_class_id, parsed_teacher_id;
+    if (!parse_int64_strict(class_id_str, &parsed_class_id) ||
+        !parse_int64_strict(teacher_id_str, &parsed_teacher_id))
+        return http_respond_error(res, 400, "ids required");
+    long long class_id = (long long)parsed_class_id;
+    long long teacher_id = (long long)parsed_teacher_id;
     if (class_id <= 0 || teacher_id <= 0)
         return http_respond_error(res, 400, "ids required");
     if (classes_unlink_teacher(teacher_id, class_id) != SUCCESS)

@@ -42,14 +42,14 @@ projeto. O `.env` não deve ser enviado ao Git.
 | `LOG_DIR` | `logs` | Diretório de logs. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARN` ou `ERROR`. |
 | `SESSION_TIMEOUT_MIN` | `60` | Duração da sessão em minutos. |
-| `WHATSAPP_API_URL` | vazio | URL da API do WhatsApp. |
-| `WHATSAPP_API_TOKEN` | vazio | Token da API do WhatsApp. |
-| `WHATSAPP_PHONE_NUMBER_ID` | vazio | Identificador do número WhatsApp. |
-| `WHATSAPP_VERIFY_TOKEN` | vazio | Token de verificação do webhook. |
-| `WHATSAPP_APP_SECRET` | vazio | Obrigatório para receber POSTs do webhook; valida a assinatura `X-Hub-Signature-256`. |
-| `AI_API_URL` | `https://api.anthropic.com/v1/messages` | Endpoint Messages API compatível com Anthropic. |
-| `AI_API_KEY` | vazio | Chave privada da API. Sem chave usa o modo local; nunca coloque no front-end nem no Git. |
-| `AI_MODEL` | vazio | Identificador do modelo disponibilizado pelo provedor. |
+| `AI_PROVIDER` | `gemini` | Provedor usado pelo cliente C. |
+| `AI_API_URL` | Gemini API | Base URL da API de geração do Gemini. |
+| `AI_API_KEY` | vazio | Chave privada do Gemini; somente no ambiente local do back-end. |
+| `AI_MODEL` | `gemini-3.8-flash` | Modelo de IA usado. |
+| `AI_INSTRUCTIONS_FILE` | busca automática | Caminho opcional para o Markdown com instruções pedagógicas da IA. O arquivo é lido a cada resposta e limitado a 3500 bytes. |
+| `ESCOLA_API_KEY` | vazio | Chave da API escolar para consultar inbox e responder mensagens. |
+| `ESCOLA_CURSOR_PATH` | `data/escola_api.cursor` | Cursor local de mensagens já consultadas. |
+| `SAE_BOOTSTRAP_KEY` | vazio | Chave temporária para o primeiro cadastro; mínimo 32 caracteres. O SAE remove a atribuição do `.env` após criar o primeiro usuário ou ao detectar usuários existentes. |
 
 Exemplo mínimo:
 
@@ -58,22 +58,26 @@ SERVER_PORT=8080
 WEB_ROOT=../../ScienceFair2026
 SESSION_TIMEOUT_MIN=60
 LOG_LEVEL=INFO
+AI_PROVIDER=gemini
+AI_API_URL=https://generativelanguage.googleapis.com/v1beta/models
+AI_MODEL=gemini-3.8-flash
+AI_API_KEY=
+AI_INSTRUCTIONS_FILE=
+ESCOLA_API_KEY=
+SAE_BOOTSTRAP_KEY=
 ```
 
 ### Ativar a integração de IA
 
-Copie `.env.example` para `.env` e preencha `AI_API_KEY` e `AI_MODEL`. O endpoint padrão
-é a API Messages da Anthropic; `AI_API_URL` pode apontar para um gateway compatível.
-Quando libcurl está instalado, `make` habilita o cliente remoto automaticamente.
-Sem a chave ou o modelo, o servidor mantém o comportamento local de demonstração.
-As chamadas remotas extraem e validam os campos da tarefa antes de pedir confirmação
-ao professor, e geram orientação ao aluno usando apenas o contexto escolar fornecido.
-O servidor nunca envia a chave ao navegador. Áudio e imagens continuam dependendo dos
-adaptadores próprios de transcrição e visão.
+Copie `.env.example` para `.env` e preencha `AI_API_KEY` e `ESCOLA_API_KEY` localmente.
+O projeto usa Gemini para dúvidas por texto. O arquivo `instruções/AIconfig.md` é carregado como orientação pedagógica; na ausência de `AI_INSTRUCTIONS_FILE`, o SAE procura esse arquivo nos caminhos relativos conhecidos. O conteúdo é limitado a 3500 bytes e lido a cada resposta. Se não for encontrado, as regras pedagógicas embutidas continuam ativas. O worker consulta a API escolar e responde
+por ela; não requer webhook, túnel ou credenciais da Meta. Com libcurl disponível,
+`make` inclui o cliente remoto. Sem chave ou libcurl, as respostas de IA ficam indisponíveis.
+O servidor nunca envia essas chaves ao navegador.
 
 ```bash
 cp .env.example .env
-# Edite .env e informe AI_API_KEY e AI_MODEL
+# Preencha AI_API_KEY e ESCOLA_API_KEY; use SAE_BOOTSTRAP_KEY no primeiro cadastro
 make
 sae servidor
 ```

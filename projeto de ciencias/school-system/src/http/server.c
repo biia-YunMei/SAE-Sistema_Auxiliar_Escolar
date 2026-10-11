@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <stdatomic.h>
+#include <errno.h>
+#include <time.h>
 
 #if defined(_WIN32)
   #include <winsock2.h>
@@ -202,6 +204,39 @@ static const char *get_header_value(const char *raw_headers,
     return NULL;
 }
 
+static int header_present(const char *raw_headers, const char *name)
+{
+    char value[8];
+    return get_header_value(raw_headers, name, value, sizeof value) != NULL;
+}
+
+static int header_count(const char *raw_headers, const char *name)
+{
+    if (!raw_headers || !name) return 0;
+    size_t name_len = strlen(name);
+    int count = 0;
+    const char *line = raw_headers;
+    while (*line) {
+        const char *end = strstr(line, "\r\n");
+        if (!end) break;
+        if ((size_t)(end - line) > name_len &&
+            strncasecmp(line, name, name_len) == 0 && line[name_len] == ':')
+            ++count;
+        line = end + 2;
+    }
+    return count;
+}
+
+static int valid_method_token(const char *method)
+{
+    if (!method || !*method) return 0;
+    for (const unsigned char *p = (const unsigned char *)method; *p; ++p)
+        if (!( (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+               (*p >= '0' && *p <= '9') || strchr("!#$%&'*+-.^_`|~", *p)))
+            return 0;
+    return 1;
+}
+
 static int parse_request(socket_t cfd, HttpRequest *out)
 {
     char *buf = (char *)malloc(MAX_HEADER + MAX_BODY + 1);
@@ -228,9 +263,20 @@ static int parse_request(socket_t cfd, HttpRequest *out)
     if (!path_qs) { free(buf); return -1; }
     *path_qs++ = '\0';
     char *ver = strchr(path_qs, ' ');
-    if (!ver || strlen(method) >= 8 || strlen(path_qs) >= 1024) { free(buf); return -1; }
+    if (!ver || strlen(method) >= 8 || strlen(path_qs) >= 1024 ||
+        !valid_method_token(method)) { free(buf); return -1; }
     *ver = '\0';
-    (void)ver;
+    if (strcmp(ver + 1, "HTTP/1.1") != 0 && strcmp(ver + 1, "HTTP/1.0") != 0) {
+        free(buf); return -1;
+    }
+    if (path_qs[0] != '/' || strchr(path_qs, '#')) { free(buf); return -1; }
+
+    const char *headers = line_end + 2;
+    if (header_count(headers, "Content-Length") > 1 ||
+        header_present(headers, "Transfer-Encoding") ||
+        (strcmp(ver + 1, "HTTP/1.1") == 0 && !header_present(headers, "Host"))) {
+        free(buf); return -1;
+    }
 
     char *qmark = strchr(path_qs, '?');
     if (qmark) { *qmark = '\0'; out->query = qmark + 1; }
@@ -242,22 +288,26 @@ static int parse_request(socket_t cfd, HttpRequest *out)
     out->body_len = off - (size_t)(body - buf);
 
     char content_length[32] = {0};
-    const char *cl = get_header_value(line_end + 2, "Content-Length", content_length, sizeof content_length);
+    const char *cl = get_header_value(headers, "Content-Length", content_length, sizeof content_length);
     char *end = NULL;
+    errno = 0;
     long expected = cl ? strtol(cl, &end, 10) : 0;
-    if (expected < 0 || expected > MAX_BODY || (cl && (*end != '\0'))) { free(buf); return -1; }
+    if (errno == ERANGE || expected < 0 || expected > MAX_BODY ||
+        (cl && (end == cl || *end != '\0')) || (!cl && out->body_len != 0) ||
+        out->body_len > (size_t)expected) { free(buf); return -1; }
     while (out->body_len < (size_t)expected) {
         ssize_t n = recv(cfd, body + out->body_len, (size_t)expected - out->body_len, 0);
         if (n <= 0) { free(buf); return -1; }
         out->body_len += (size_t)n;
     }
+    if (out->body_len && memchr(body, '\0', out->body_len)) { free(buf); return -1; }
     body[out->body_len] = '\0';
-    const char *authorization = get_header_value(line_end + 2, "Authorization",
+    const char *authorization = get_header_value(headers, "Authorization",
                                                   out->auth_storage,
                                                   sizeof out->auth_storage);
     out->auth = (authorization && strncasecmp(authorization, "Bearer ", 7) == 0)
         ? authorization + 7 : NULL;
-    out->webhook_signature = get_header_value(line_end + 2, "X-Hub-Signature-256",
+    out->webhook_signature = get_header_value(headers, "X-Hub-Signature-256",
                                                out->webhook_signature_storage,
                                                sizeof out->webhook_signature_storage);
     out->storage = buf;
@@ -312,6 +362,7 @@ int router_dispatch_request(const struct RouterCtx *ctx, const HttpRequest *req,
 typedef struct {
     socket_t cfd;
     void  *server_ctx;
+    char client_ip[64];
 } ConnArg;
 
 static void *client_thread(void *arg)
@@ -320,6 +371,8 @@ static void *client_thread(void *arg)
     HttpRequest req = {0};
     HttpResponse res = {0};
     char id_buf[64] = {0};
+    snprintf(req.client_ip_storage, sizeof req.client_ip_storage, "%s", c->client_ip);
+    req.client_ip = req.client_ip_storage;
 
     if (parse_request(c->cfd, &req) != 0) {
         http_respond_error(&res, 400, "bad request");
@@ -375,6 +428,11 @@ int http_server_run(const char *host, int port, void *ctx,
     else if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
         log_error("endereço SERVER_HOST inválido"); close(sfd); return ERROR_CONFIG;
     }
+    if ((ntohl(addr.sin_addr.s_addr) >> 24) != 127) {
+        log_error("bind remoto recusado: o servidor não oferece TLS; use um proxy HTTPS e mantenha SERVER_HOST=127.0.0.1");
+        close(sfd);
+        return ERROR_CONFIG;
+    }
 
     if (bind(sfd, (struct sockaddr *)&addr, sizeof addr) < 0) {
         log_error("bind: %s", strerror(errno)); close(sfd); return ERROR_NETWORK;
@@ -414,9 +472,23 @@ int http_server_run(const char *host, int port, void *ctx,
         setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&io_timeout, sizeof io_timeout);
         setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&io_timeout, sizeof io_timeout);
         ConnArg *c = (ConnArg *)malloc(sizeof *c);
-        if (!c) { close(cfd); continue; }
+        if (!c) {
+            close(cfd);
+            atomic_fetch_sub_explicit(&active_clients, 1, memory_order_release);
+            continue;
+        }
         c->cfd = cfd;
         c->server_ctx = ctx;
+        struct sockaddr_in peer_addr;
+        memset(&peer_addr, 0, sizeof peer_addr);
+#if defined(_WIN32)
+        int peer_len = (int)sizeof peer_addr;
+#else
+        socklen_t peer_len = (socklen_t)sizeof peer_addr;
+#endif
+        if (getpeername(cfd, (struct sockaddr *)&peer_addr, &peer_len) == 0)
+            (void)inet_ntop(AF_INET, &peer_addr.sin_addr, c->client_ip, sizeof c->client_ip);
+        if (!c->client_ip[0]) snprintf(c->client_ip, sizeof c->client_ip, "unknown");
 #if defined(_WIN32)
         /* Winsock não tem pthreads portáveis; criamos via _beginthreadex. */
         HANDLE th = CreateThread(NULL, 0,
@@ -433,6 +505,16 @@ int http_server_run(const char *host, int port, void *ctx,
 #endif
     }
     close(sfd);
+    /* As threads são destacadas; aguarda as requisições em andamento antes
+     * de o chamador encerrar banco, logger e demais dependências globais. */
+    while (atomic_load_explicit(&active_clients, memory_order_acquire) != 0) {
+#if defined(_WIN32)
+        Sleep(50);
+#else
+        struct timespec pause = { .tv_sec = 0, .tv_nsec = 50000000L };
+        (void)nanosleep(&pause, NULL);
+#endif
+    }
 #if defined(_WIN32)
     WSACleanup();
 #endif

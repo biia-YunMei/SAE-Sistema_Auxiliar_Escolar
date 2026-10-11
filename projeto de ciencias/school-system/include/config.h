@@ -31,16 +31,22 @@ typedef struct {
     char  whatsapp_api_token[256];
     char  whatsapp_phone_id[64];
     char  whatsapp_verify_token[128];
-    char  whatsapp_app_secret[256];
+    char  whatsapp_webhook_secret[256];
 
     /* IA (opcional) */
+    char  ai_provider[32];
     char  ai_api_url[256];
     char  ai_api_key[256];
     char  ai_model[64];
+    char  ai_instructions_file[512];
 
     /* Transcrição (opcional) */
     char  transcription_api_url[256];
     char  transcription_api_key[256];
+
+    /* API escolar de inbox/reply; ref de remetentes permanece anônima. */
+    char  escola_api_key[256];
+    char  escola_cursor_path[512];
 
     /* Limites de segurança */
     int   max_message_size;
@@ -51,6 +57,8 @@ typedef struct {
 /* Carrega do ambiente (e, se existir, do arquivo .env).
  * Retorna SUCCESS ou ERROR_CONFIG. */
 int  config_load(AppConfig *out);
+/* Remove somente a atribuição SAE_BOOTSTRAP_KEY do .env local. */
+int  config_clear_bootstrap_key(void);
 
 /* Configuração carregada na inicialização. Ela é somente leitura e
  * permite que adaptadores não dependam de variáveis globais externas. */

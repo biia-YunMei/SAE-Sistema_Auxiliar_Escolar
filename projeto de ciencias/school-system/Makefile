@@ -148,7 +148,7 @@ $(TEST_DIR)/test_students:   testes/test_students.c src/http/controllers/student
                        src/http/controllers/bootstrap_controller.c src/http/controllers/users_controller.c \
                        src/http/controllers/teachers_controller.c src/http/controllers/classes_controller.c \
                        src/http/controllers/notices_controller.c \
-                       src/auth.c src/database.c src/users.c src/classes.c src/validation.c src/logger.c
+                       src/auth.c src/config.c src/database.c src/users.c src/classes.c src/validation.c src/logger.c
 
 $(TEST_DIR)/test_%: testes/test_%.c
 	@mkdir -p "$(@D)"

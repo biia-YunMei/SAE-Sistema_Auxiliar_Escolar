@@ -303,6 +303,28 @@ static int run_migrations(void)
         },
         { 20,
           "ALTER TABLE whatsapp_inbound_events ADD COLUMN reply TEXT NOT NULL DEFAULT '';"
+        },
+        { 21,
+          "ALTER TABLE messages ADD COLUMN external_id TEXT;"
+          "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_external_id ON messages(external_id) WHERE external_id IS NOT NULL;"
+        },
+        { 22,
+          "ALTER TABLE notices ADD COLUMN publish_date TEXT NOT NULL DEFAULT '1970-01-01';"
+          "UPDATE notices SET publish_date=substr(created_at,1,10) WHERE publish_date='1970-01-01';"
+          "CREATE INDEX IF NOT EXISTS idx_notices_publish_date ON notices(class_id,publish_date,status);"
+        },
+        { 23,
+          "CREATE TABLE IF NOT EXISTS anonymous_enrollment_codes ("
+          " code_hash TEXT PRIMARY KEY, class_id INTEGER NOT NULL, created_by INTEGER NOT NULL,"
+          " created_at TEXT NOT NULL DEFAULT (datetime('now'))," 
+          " expires_at TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT,"
+          " FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE CASCADE"
+          ");"
+          "CREATE INDEX IF NOT EXISTS idx_enrollment_codes_expiry ON anonymous_enrollment_codes(expires_at,claimed_at);"
+        },
+        { 24,
+          "ALTER TABLE anonymous_students ADD COLUMN class_verified INTEGER NOT NULL DEFAULT 0 CHECK(class_verified IN (0,1));"
         }
     };
 

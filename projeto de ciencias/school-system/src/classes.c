@@ -103,7 +103,8 @@ int classes_delete(int64_t id)
 {
     if (id <= 0) return ERROR_INVALID_INPUT;
     sqlite3_stmt *st = NULL;
-    int rc = db_prepare("DELETE FROM classes WHERE id=?;", &st);
+    /* Preserva tarefas, comunicados e matrículas no histórico. */
+    int rc = db_prepare("UPDATE classes SET status='INACTIVE' WHERE id=? AND status='ACTIVE';", &st);
     if (rc != SUCCESS) return rc;
     db_bind_int64(st, 1, (long long)id);
     rc = sqlite3_step(st);

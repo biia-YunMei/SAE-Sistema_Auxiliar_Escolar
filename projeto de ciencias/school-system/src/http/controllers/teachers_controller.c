@@ -4,6 +4,7 @@
 #include "validation.h"
 #include "database.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,20 +12,7 @@
 
 static int field(const char *body, const char *key, char *out, size_t cap)
 {
-    char needle[64];
-    int n = snprintf(needle, sizeof needle, "\"%s\":\"", key);
-    const char *p = body ? strstr(body, needle) : NULL;
-    if (n < 0 || (size_t)n >= sizeof needle || !p) return 0;
-    p += n;
-    size_t used = 0;
-    while (*p && *p != '"') {
-        if (*p == '\\' && p[1]) ++p;
-        if (used + 1 >= cap) return 0;
-        out[used++] = *p++;
-    }
-    if (*p != '"') return 0;
-    out[used] = '\0';
-    return 1;
+    return json_object_get_string(body, key, out, cap);
 }
 
 static int coordinator(const HttpRequest *req, HttpResponse *res, AuthSession *s)

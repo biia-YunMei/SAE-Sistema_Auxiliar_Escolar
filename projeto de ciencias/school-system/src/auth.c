@@ -17,6 +17,7 @@
 #define LOGIN_MAX_ATTEMPTS 5
 #define LOGIN_WINDOW_SECONDS (15 * 60)
 #define LOGIN_LOCK_SECONDS (15 * 60)
+#define AUTH_MAX_LOGIN_GUARDS 2048
 
 typedef struct {
     char token[65];
@@ -33,7 +34,7 @@ typedef struct {
 } LoginGuard;
 
 static SessionSlot g_sessions[AUTH_MAX_SESSIONS];
-static LoginGuard g_guards[AUTH_MAX_SESSIONS];
+static LoginGuard g_guards[AUTH_MAX_LOGIN_GUARDS];
 static pthread_mutex_t g_auth_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int g_timeout_min = 60;
 
@@ -75,18 +76,30 @@ static int random_token(char out[65])
 static int guard_slot(const char *phone, long now)
 {
     int free_slot = -1;
-    for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
+    for (int i = 0; i < AUTH_MAX_LOGIN_GUARDS; ++i) {
         if (g_guards[i].phone[0] && g_guards[i].locked_until <= now &&
             now - g_guards[i].window_started > LOGIN_WINDOW_SECONDS)
             memset(&g_guards[i], 0, sizeof g_guards[i]);
         if (g_guards[i].phone[0] == '\0' && free_slot < 0) free_slot = i;
         if (strcmp(g_guards[i].phone, phone) == 0) return i;
     }
-    if (free_slot >= 0) {
-        snprintf(g_guards[free_slot].phone, sizeof g_guards[free_slot].phone, "%s", phone);
-        g_guards[free_slot].window_started = now;
+    int slot = free_slot;
+    if (slot < 0) {
+        long oldest = now;
+        for (int i = 0; i < AUTH_MAX_LOGIN_GUARDS; ++i) {
+            if (g_guards[i].locked_until > now) continue;
+            if (slot < 0 || g_guards[i].window_started < oldest) {
+                slot = i;
+                oldest = g_guards[i].window_started;
+            }
+        }
     }
-    return free_slot;
+    if (slot >= 0) {
+        memset(&g_guards[slot], 0, sizeof g_guards[slot]);
+        snprintf(g_guards[slot].phone, sizeof g_guards[slot].phone, "%s", phone);
+        g_guards[slot].window_started = now;
+    }
+    return slot;
 }
 
 static int login_is_allowed(const char *phone)
@@ -119,20 +132,25 @@ static void register_login_result(const char *phone, int success)
     pthread_mutex_unlock(&g_auth_mutex);
 }
 
-int auth_login_phone(const char *phone, const char *password, AuthSession *out)
+int auth_login_phone_from_ip(const char *phone, const char *password,
+                             const char *client_ip, AuthSession *out)
 {
     if (!phone || !validation_is_valid_phone(phone)) return ERROR_INVALID_PHONE;
+    if (client_ip && *client_ip && !login_is_allowed(client_ip))
+        return ERROR_FORBIDDEN;
     if (!login_is_allowed(phone)) return ERROR_FORBIDDEN;
 
     User user;
     if (users_find_by_phone(phone, &user) != SUCCESS || user.status != USER_STATUS_ACTIVE) {
         register_login_result(phone, 0);
+        if (client_ip && *client_ip) register_login_result(client_ip, 0);
         return ERROR_UNAUTHORIZED;
     }
 
     /* Alunos não possuem acesso por login; seus dados são apenas cadastrais. */
     if (user.type == USER_TYPE_STUD) {
         register_login_result(phone, 0);
+        if (client_ip && *client_ip) register_login_result(client_ip, 0);
         return ERROR_UNAUTHORIZED;
     }
 
@@ -156,6 +174,7 @@ int auth_login_phone(const char *phone, const char *password, AuthSession *out)
     sqlite3_finalize(statement);
     if (!valid) {
         register_login_result(phone, 0);
+        if (client_ip && *client_ip) register_login_result(client_ip, 0);
         return ERROR_UNAUTHORIZED;
     }
 
@@ -181,7 +200,13 @@ int auth_login_phone(const char *phone, const char *password, AuthSession *out)
         out->expires_at = time(NULL) + g_timeout_min * 60;
     }
     register_login_result(phone, 1);
+    if (client_ip && *client_ip) register_login_result(client_ip, 1);
     return SUCCESS;
+}
+
+int auth_login_phone(const char *phone, const char *password, AuthSession *out)
+{
+    return auth_login_phone_from_ip(phone, password, NULL, out);
 }
 
 int auth_session_create(AuthSession *session, char *token_out, size_t cap)

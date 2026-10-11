@@ -29,6 +29,20 @@ int main(void)
     CHECK(ai_minimal_json_extract(gemini_response, "text", buf, sizeof buf));
     CHECK(strcmp(buf, "resposta Gemini") == 0);
 
+    /* Formatação compatível com o texto entregue pelo WhatsApp. */
+    char formatted[512] =
+        "Essa conta: $200^{6}$.\\n\\nAqui vai uma *pista*: $200 = 2 \\times 100$.";
+    ai_format_student_response(formatted, sizeof formatted);
+    if (strcmp(formatted,
+        "Essa conta: 200⁶.\n\nAqui vai uma pista: 200 = 2 × 100.") == 0) passed++;
+    else { failed++; fprintf(stderr, "format actual: [%s]\n", formatted); }
+    char markdown[128] = "**Passo 1**: `calcule` 2^6";
+    ai_format_student_response(markdown, sizeof markdown);
+    CHECK(strcmp(markdown, "Passo 1: calcule 2⁶") == 0);
+    char dollar[32] = "Custa $5";
+    ai_format_student_response(dollar, sizeof dollar);
+    CHECK(strcmp(dollar, "Custa $5") == 0);
+
     /* Parse da mensagem do professor */
     TaskData t;
     int rc = ai_parse_teacher_message(

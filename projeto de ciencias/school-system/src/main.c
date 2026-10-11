@@ -55,6 +55,7 @@ static const Route g_routes[] = {
     { "POST", "/api/auth",                         ctrl_auth_login         },
     { "POST", "/api/auth/logout",                  ctrl_auth_logout        },
     { "POST", "/api/bootstrap",                    ctrl_bootstrap_admin    },
+    { "GET",  "/api/bootstrap/status",             ctrl_bootstrap_status   },
     { "GET",  "/api/notices",                      ctrl_notices_list       },
     { "POST", "/api/notices",                      ctrl_notices_create     },
     { "PUT",  "/api/notices/:id",                  wr_notices_update       },
@@ -69,6 +70,8 @@ static const Route g_routes[] = {
     { "POST", "/api/students/class",               ctrl_students_assign_class },
     { "POST", "/api/students",                    ctrl_students_create    },
     { "GET",  "/api/students",                    ctrl_students_list      },
+    { "GET",  "/api/messages",                    ctrl_messages_list      },
+    { "POST", "/api/anonymous/enrollment-codes",   ctrl_anonymous_enrollment_code },
 
     { "GET",  "/api/classes",                      ctrl_classes_list       },
     { "POST", "/api/classes",                      ctrl_classes_create     },
@@ -82,10 +85,6 @@ static const Route g_routes[] = {
     { "PUT",  "/api/tasks/:id",                    wr_tasks_update         },
     { "DELETE","/api/tasks/:id",                   wr_tasks_delete         },
 
-    { "GET",  "/api/whatsapp/webhook",             ctrl_whatsapp_webhook   },
-    { "POST", "/api/whatsapp/webhook",             ctrl_whatsapp_webhook   },
-    { "POST", "/api/whatsapp/messages",            ctrl_whatsapp_send      },
-    { "POST", "/api/whatsapp/notify-class",        ctrl_whatsapp_notify_class }
 };
 
 struct ServerRoutes { const Route *routes; size_t n; };

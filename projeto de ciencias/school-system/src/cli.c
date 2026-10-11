@@ -73,64 +73,64 @@ static void help_plain(void)
 static void help(void)
 {
     if (!unicode_ui_enabled()) { help_plain(); return; }
-    puts("╭──────────────────── SAE — SISTEMA AUXILIAR ESCOLAR ─────────────────────────╮");
-    puts("│                                                                             │");
-    puts("├────────────────────────────────── INICIO ───────────────────────────────────┤");
-    puts("│     sae servidor                                  Inicia o servidor.        │");
-    puts("│     sae -ca -n NOME -p TELEFONE -s SENHA         Cria o 1º coordenador.     │");
-    puts("│     sae login -p TELEFONE -s SENHA               Entra no sistema.          │");
-    puts("│     sae logout                                   Encerra a sessão local.    │");
-    puts("│                                                                             │");
-    puts("├ USUÁRIOS (somente COORD para criar, editar e excluir) ──────────────────────┤");
-    puts("│     sae usuario criar -n NOME -p TELEFONE -t TIPO [-s SENHA]                │");
-    puts("│          Tipos: COORD ou PROF. Aluno é cadastrado pela área da coordenação. │");
-    puts("│     sae usuario listar                                                      │");
-    puts("│     sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]                 │");
-    puts("│     sae usuario excluir -u ID                                               │");
-    puts("│     sae aluno vincular -u ID_ALUNO -c ID_TURMA                              │");
-    puts("│                                                                             │");
-    puts("├─────────────────────── TURMAS (COORD e PROF) ───────────────────────────────┤");
-    puts("│     sae turma criar -n NOME -g SERIE [-t TURNO]                             │");
-    puts("│          Turnos: MANHA, TARDE, NOITE ou INTEGRAL                            │");
-    puts("│     sae turma listar                                                        │");
-    puts("│     sae turma editar -i ID -n NOME -g SERIE -t TURNO                        │");
-    puts("│     sae turma excluir -i ID                                                 │");
-    puts("│     sae turma vincular -c ID_TURMA -u ID_USUARIO_PROF   (somente COORD)     │");
-    puts("│                                                                             │");
-    puts("├────────────────────── TAREFAS (COORD e PROF) ───────────────────────────────┤");
-    puts("│  sae tarefa criar -c TURMA -m MATERIA -n TITULO                             │");
-    puts("│                       -v AAAA-MM-DD [-d DESCRICAO]                          │");
-    puts("│                                                                             │");
-    puts("│     COORD também informa: -u ID_PROF.                                       │");
-    puts("│     sae tarefa listar -c ID_TURMA                                           │");
-    puts("│     sae tarefa editar -i ID -m MATERIA -n TITU                              │");
-    puts("│                       -v AAAA-MM-DD [-d DESCRICAO]                          │");
-    puts("│                                                                             │");
-    puts("│     sae tarefa excluir -i ID                                                │");
-    puts("│     Alunos podem apenas listar tarefas da própria turma.                    │");
-    puts("│                                                                             │");
-    puts("├─────────────── MENSAGENS (API ESCOLAR EXTERNA) ──────────────────────────────┤");
-    puts("│     sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM                          │");
-    puts("│     Responde uma mensagem recebida; o ID tem formato m_...                   │");
-    puts("│     sae whatsapp turma não está disponível: a API não oferece envio em massa.│");
-    puts("│     Requer ESCOLA_API_KEY configurada no ambiente local.                     │");
-    puts("│                                                                             │");
-    puts("├────────────────── API ESCOLAR (whoami, inbox, reply e ref) ─────────────────┤");
-    puts("│     sae escola whoami                                                      │");
-    puts("│     sae escola inbox [-l LIMITE]                                            │");
-    puts("│     sae escola reply -i ID_DA_INBOX -m MENSAGEM                             │");
-    puts("│     sae escola tutor -i ID -c ID_TURMA -m PERGUNTA                          │");
-    puts("│          IA tutora consulta tarefas da turma e responde ao ID da inbox.     │");
-    puts("│     sae escola ref                                                         │");
-    puts("│     Requer ESCOLA_API_KEY, AI_API_KEY e login SAE; chaves ficam no .env.    │");
-    puts("│                                                                             │");
-    puts("├─────────────────────────────── OPÇÕES ──────────────────────────────────────┤");
-    puts("│                                                                             │");
-    puts("│     -i identificação | -n nome/título | -p telefone | -s senha              │");
-    puts("│     -t tipo/turno | -c turma | -u usuário/professor | -m matéria/mensagem   │");
-    puts("│     -g série | -v vencimento | -d descrição                                 │");
-    puts("│     sae --help                                       Mostra esta ajuda.     │");
-    puts("╰─────────────────────────────────────────────────────────────────────────────╯");
+    puts("╭──────────────────── SAE — SISTEMA AUXILIAR ESCOLAR ────────────────────────────╮");
+    puts("│                                                                                │");
+    puts("├────────────────────────────────── INICIO ──────────────────────────────────────┤");
+    puts("│     sae servidor                                  Inicia o servidor.           │");
+    puts("│     sae -ca -n NOME -p TELEFONE -s SENHA         Cria o 1º coordenador.        │");
+    puts("│     sae login -p TELEFONE -s SENHA               Entra no sistema.             │");
+    puts("│     sae logout                                   Encerra a sessão local.       │");
+    puts("│                                                                                │");
+    puts("├ USUÁRIOS (somente COORD para criar, editar e excluir) ─────────────────────────┤");
+    puts("│     sae usuario criar -n NOME -p TELEFONE -t TIPO [-s SENHA]                   │");
+    puts("│          Tipos: COORD ou PROF. Aluno é cadastrado pela área da coordenação.    │");
+    puts("│     sae usuario listar                                                         │");
+    puts("│     sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]                    │");
+    puts("│     sae usuario excluir -u ID                                                  │");
+    puts("│     sae aluno vincular -u ID_ALUNO -c ID_TURMA                                 │");
+    puts("│                                                                                │");
+    puts("├─────────────────────── TURMAS (COORD e PROF) ──────────────────────────────────┤");
+    puts("│     sae turma criar -n NOME -g SERIE [-t TURNO]                                │");
+    puts("│          Turnos: MANHA, TARDE, NOITE ou INTEGRAL                               │");
+    puts("│     sae turma listar                                                           │");
+    puts("│     sae turma editar -i ID -n NOME -g SERIE -t TURNO                           │");
+    puts("│     sae turma excluir -i ID                                                    │");
+    puts("│     sae turma vincular -c ID_TURMA -u ID_USUARIO_PROF   (somente COORD)        │");
+    puts("│                                                                                │");
+    puts("├────────────────────── TAREFAS (COORD e PROF) ──────────────────────────────────┤");
+    puts("│  sae tarefa criar -c TURMA -m MATERIA -n TITULO                                │");
+    puts("│                       -v AAAA-MM-DD [-d DESCRICAO]                             │");
+    puts("│                                                                                │");
+    puts("│     COORD também informa: -u ID_PROF.                                          │");
+    puts("│     sae tarefa listar -c ID_TURMA                                              │");
+    puts("│     sae tarefa editar -i ID -m MATERIA -n TITU                                 │");
+    puts("│                       -v AAAA-MM-DD [-d DESCRICAO]                             │");
+    puts("│                                                                                │");
+    puts("│     sae tarefa excluir -i ID                                                   │");
+    puts("│     Alunos podem apenas listar tarefas da própria turma.                       │");
+    puts("│                                                                                │");
+    puts("├─────────────── MENSAGENS (API ESCOLAR EXTERNA) ────────────────────────────────┤");
+    puts("│     sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM                             │");
+    puts("│     Responde uma mensagem recebida; o ID tem formato m_...                     │");
+    puts("│     sae whatsapp turma não está disponível: a API não oferece envio em massa.  │");
+    puts("│     Requer ESCOLA_API_KEY configurada no ambiente local.                       │");
+    puts("│                                                                                │");
+    puts("├────────────────── API ESCOLAR (whoami, inbox, reply e ref) ────────────────────┤");
+    puts("│     sae escola whoami                                                          │");
+    puts("│     sae escola inbox [-l LIMITE]                                               │");
+    puts("│     sae escola reply -i ID_DA_INBOX -m MENSAGEM                                │");
+    puts("│     sae escola tutor -i ID -c ID_TURMA -m PERGUNTA                             │");
+    puts("│          IA tutora consulta tarefas da turma e responde ao ID da inbox.        │");
+    puts("│     sae escola ref                                                             │");
+    puts("│     Requer ESCOLA_API_KEY, AI_API_KEY e login SAE; chaves ficam no .env.       │");
+    puts("│                                                                                │");
+    puts("├─────────────────────────────── OPÇÕES ─────────────────────────────────────────┤");
+    puts("│                                                                                │");
+    puts("│     -i identificação | -n nome/título | -p telefone | -s senha                 │");
+    puts("│     -t tipo/turno | -c turma | -u usuário/professor | -m matéria/mensagem      │");
+    puts("│     -g série | -v vencimento | -d descrição                                    │");
+    puts("│     sae --help                                       Mostra esta ajuda.        │");
+    puts("╰────────────────────────────────────────────────────────────────────────────────╯");
 }
 
 static const char *opt(int argc, char **argv, const char *key)
@@ -457,7 +457,7 @@ static void print_response(const char *response)
     if (strstr(response, "\"message\":\"user updated\"")) { print_success("Usuário atualizado com sucesso."); return; }
     if (strstr(response, "\"message\":\"user deleted\"")) { print_success("Usuário excluído com sucesso."); return; }
     if (strstr(response, "\"message\":\"class updated\"")) { print_success("Turma atualizada com sucesso."); return; }
-    if (strstr(response, "\"message\":\"class deleted\"")) { print_success("Turma excluída com sucesso."); return; }
+    if (strstr(response, "\"message\":\"class deactivated\"")) { print_success("Turma inativada com sucesso; o histórico foi preservado."); return; }
     if (strstr(response, "\"message\":\"task updated\"")) { print_success("Tarefa atualizada com sucesso."); return; }
     if (strstr(response, "\"message\":\"task deleted\"")) { print_success("Tarefa excluída com sucesso."); return; }
     if (strstr(response, "\"ok\":true")) { print_success("Operação realizada com sucesso."); return; }
@@ -503,7 +503,7 @@ static void print_response(const char *response)
 static int path_is_public(const char *path)
 {
     return strcmp(path, "/api/bootstrap") == 0 || strcmp(path, "/api/auth") == 0 ||
-           strcmp(path, "/api/health") == 0 || strcmp(path, "/api/whatsapp/webhook") == 0;
+           strcmp(path, "/api/health") == 0;
 }
 
 static int call(const char *method, const char *path, const char *body)

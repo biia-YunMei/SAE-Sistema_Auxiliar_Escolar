@@ -12,6 +12,7 @@
 int ctrl_auth_login        (const HttpRequest *req, HttpResponse *res);
 int ctrl_auth_logout       (const HttpRequest *req, HttpResponse *res);
 int ctrl_bootstrap_admin   (const HttpRequest *req, HttpResponse *res);
+int ctrl_bootstrap_status  (const HttpRequest *req, HttpResponse *res);
 int ctrl_notices_list      (const HttpRequest *req, HttpResponse *res);
 int ctrl_notices_create    (const HttpRequest *req, HttpResponse *res);
 int ctrl_notices_update    (const HttpRequest *req, HttpResponse *res, const char *id);
@@ -27,6 +28,8 @@ int ctrl_teachers_delete   (const HttpRequest *req, HttpResponse *res, const cha
 int ctrl_students_assign_class(const HttpRequest *req, HttpResponse *res);
 int ctrl_students_create(const HttpRequest *req, HttpResponse *res);
 int ctrl_students_list(const HttpRequest *req, HttpResponse *res);
+int ctrl_messages_list(const HttpRequest *req, HttpResponse *res);
+int ctrl_anonymous_enrollment_code(const HttpRequest *req, HttpResponse *res);
 
 int ctrl_classes_list      (const HttpRequest *req, HttpResponse *res);
 int ctrl_classes_create    (const HttpRequest *req, HttpResponse *res);

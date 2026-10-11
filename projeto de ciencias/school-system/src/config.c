@@ -18,9 +18,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#if defined(_WIN32)
+#include <process.h>
+#define getpid _getpid
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 static AppConfig g_current_config;
 static int g_config_loaded = 0;
+static pthread_mutex_t g_bootstrap_env_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int g_bootstrap_cleanup_done = 0;
 
 /* ---------- helpers internos -------------------------------------------- */
 
@@ -38,9 +51,12 @@ static int  parse_int_env(const char *name, int defv)
 {
     const char *v = getenv(name);
     if (!v || !*v) return defv;
+    errno = 0;
     char *end = NULL;
     long val = strtol(v, &end, 10);
-    if (end == v) return defv;
+    while (end && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) ++end;
+    if (errno == ERANGE || end == v || (end && *end) || val < INT_MIN || val > INT_MAX)
+        return defv;
     return (int)val;
 }
 
@@ -67,9 +83,14 @@ static void load_env_file(const char *path)
         while (klen > 0 && (key[klen-1] == ' ' || key[klen-1] == '\t')) {
             key[--klen] = '\0';
         }
+        while (*val == ' ' || *val == '\t') ++val;
         size_t vlen = strlen(val);
-        while (vlen > 0 && (val[vlen-1] == '\n' || val[vlen-1] == '\r')) {
+        while (vlen > 0 && (val[vlen-1] == '\n' || val[vlen-1] == '\r' ||
+                             val[vlen-1] == ' ' || val[vlen-1] == '\t'))
             val[--vlen] = '\0';
+        if (vlen >= 2 && (val[0] == '"' || val[0] == '\'') && val[vlen-1] == val[0]) {
+            val[vlen-1] = '\0';
+            ++val;
         }
 
         if (getenv(key) == NULL && klen > 0) {
@@ -85,12 +106,114 @@ static void load_env_file(const char *path)
     fclose(f);
 }
 
+static int is_bootstrap_env_line(const char *line)
+{
+    while (*line == ' ' || *line == '\t') ++line;
+    if (*line == '#' || *line == '\0' || *line == '\r' || *line == '\n') return 0;
+    const char *equals = strchr(line, '=');
+    if (!equals) return 0;
+    const char *end = equals;
+    while (end > line && (end[-1] == ' ' || end[-1] == '\t')) --end;
+    static const char key[] = "SAE_BOOTSTRAP_KEY";
+    return (size_t)(end - line) == sizeof key - 1 &&
+           memcmp(line, key, sizeof key - 1) == 0;
+}
+
+int config_clear_bootstrap_key(void)
+{
+    /* Testes e ferramentas isoladas não devem alterar o .env do diretório. */
+    if (!g_config_loaded) return SUCCESS;
+    (void)pthread_mutex_lock(&g_bootstrap_env_mutex);
+    if (g_bootstrap_cleanup_done) {
+        (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+        return SUCCESS;
+    }
+#if defined(_WIN32)
+    (void)_putenv_s("SAE_BOOTSTRAP_KEY", "");
+#else
+    (void)unsetenv("SAE_BOOTSTRAP_KEY");
+#endif
+    FILE *source = fopen(".env", "rb");
+    if (!source) {
+        int missing = errno == ENOENT;
+        if (missing) g_bootstrap_cleanup_done = 1;
+        (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+        return missing ? SUCCESS : ERROR_INTERNAL;
+    }
+
+    char temporary[96];
+    int path_len = snprintf(temporary, sizeof temporary,
+                            ".env.bootstrap.tmp.%ld", (long)getpid());
+    if (path_len < 0 || (size_t)path_len >= sizeof temporary) {
+        fclose(source);
+        (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+        return ERROR_INTERNAL;
+    }
+#if defined(_WIN32)
+    FILE *target = fopen(temporary, "wbx");
+#else
+    int target_fd = open(temporary, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    FILE *target = target_fd >= 0 ? fdopen(target_fd, "wb") : NULL;
+    if (!target && target_fd >= 0) (void)close(target_fd);
+#endif
+    if (!target) {
+        fclose(source);
+        (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+        return ERROR_INTERNAL;
+    }
+
+    struct stat file_stat;
+    int have_mode = stat(".env", &file_stat) == 0;
+    char line[4096];
+    int at_line_start = 1, skip_line = 0, removed = 0;
+    int failed = 0;
+    while (fgets(line, sizeof line, source)) {
+        if (at_line_start) {
+            skip_line = is_bootstrap_env_line(line);
+            if (skip_line) removed = 1;
+        }
+        if (!skip_line && fputs(line, target) == EOF) failed = 1;
+        size_t length = strlen(line);
+        at_line_start = length > 0 && line[length - 1] == '\n';
+        if (at_line_start) skip_line = 0;
+    }
+    if (ferror(source) || fflush(target) != 0) failed = 1;
+    if (fclose(source) != 0) failed = 1;
+    if (fclose(target) != 0) failed = 1;
+
+    if (!removed || failed) {
+        (void)remove(temporary);
+        if (!failed) g_bootstrap_cleanup_done = 1;
+        (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+        return failed ? ERROR_INTERNAL : SUCCESS;
+    }
+#if !defined(_WIN32)
+    if (have_mode && chmod(temporary, file_stat.st_mode & 0777) != 0) {
+        (void)remove(temporary);
+        (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+        return ERROR_INTERNAL;
+    }
+#else
+    (void)have_mode;
+#endif
+    int replace_result = 0;
+#if defined(_WIN32)
+    if (remove(".env") != 0 && errno != ENOENT) replace_result = -1;
+#endif
+    if (replace_result == 0 && rename(temporary, ".env") != 0) replace_result = -1;
+    if (replace_result != 0) (void)remove(temporary);
+    if (replace_result == 0) g_bootstrap_cleanup_done = 1;
+    (void)pthread_mutex_unlock(&g_bootstrap_env_mutex);
+    return replace_result == 0 ? SUCCESS : ERROR_INTERNAL;
+}
+
 /* ---------- API pública -------------------------------------------------- */
 
 int config_load(AppConfig *out)
 {
     if (!out) return ERROR_INVALID_INPUT;
     memset(out, 0, sizeof *out);
+    g_bootstrap_cleanup_done = 0;
 
     load_env_file(".env");
     load_env_file("/etc/school-backend.env");
@@ -122,6 +245,8 @@ int config_load(AppConfig *out)
     copy_str(out->ai_api_url, sizeof out->ai_api_url, getenv("AI_API_URL"), "https://generativelanguage.googleapis.com/v1beta/models");
     copy_str(out->ai_api_key, sizeof out->ai_api_key, getenv("AI_API_KEY"), "");
     copy_str(out->ai_model,  sizeof out->ai_model,  getenv("AI_MODEL"),  "gemini-3.8-flash");
+    copy_str(out->ai_instructions_file, sizeof out->ai_instructions_file,
+             getenv("AI_INSTRUCTIONS_FILE"), "");
 
     copy_str(out->transcription_api_url, sizeof out->transcription_api_url, getenv("TRANSCRIPTION_API_URL"), "");
     copy_str(out->transcription_api_key, sizeof out->transcription_api_key, getenv("TRANSCRIPTION_API_KEY"), "");

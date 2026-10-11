@@ -14,6 +14,7 @@
 #include "config.h"
 #include "whatsapp.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -29,38 +30,7 @@
 static int json_extract_string(const char *body, const char *key,
                                char *out, size_t cap)
 {
-    char needle[64];
-    int written = snprintf(needle, sizeof needle, "\"%s\"", key);
-    if (written <= 0 || (size_t)written >= sizeof needle) return 0;
-    const char *p = strstr(body, needle);
-    if (!p) return 0;
-    p += written;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p++ != ':') return 0;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p++ != '"') return 0;
-
-    size_t used = 0;
-    while (*p && *p != '"') {
-        if (*p == '\\' && p[1]) {
-            ++p;
-            char ch;
-            if (*p == 'n') ch = '\n';
-            else if (*p == 'r') ch = '\r';
-            else if (*p == 't') ch = '\t';
-            else ch = *p;
-            if (used + 1 >= cap) return 0;
-            out[used++] = ch;
-            ++p;
-        } else {
-            if (used + 1 >= cap) return 0;
-            out[used++] = *p++;
-        }
-        if (used + 1 >= cap) return 0;
-    }
-    if (*p != '"') return 0;
-    out[used] = '\0';
-    return 1;
+    return json_object_get_string(body, key, out, cap);
 }
 
 /* Extrai o primeiro evento no formato compatível com o provedor sem depender de um
@@ -159,15 +129,33 @@ static int normalize_phone(const char *source, char *phone, size_t cap)
 /* Evento identificado pelo provedor só executa o fluxo de negócio uma vez. */
 static int claim_inbound_event(const char *event_id, const char *phone)
 {
+    if (!event_id || !*event_id || strlen(event_id) > 200 || !phone || !*phone)
+        return ERROR_INVALID_INPUT;
     sqlite3_stmt *statement = NULL;
     if (db_prepare("INSERT OR IGNORE INTO whatsapp_inbound_events(event_id,sender_phone) VALUES(?,?);",
                    &statement) != SUCCESS) return ERROR_DATABASE;
-    db_bind_text(statement, 1, event_id);
-    db_bind_text(statement, 2, phone);
-    int step = sqlite3_step(statement);
+    int bound = db_bind_text(statement, 1, event_id) == SUCCESS &&
+                db_bind_text(statement, 2, phone) == SUCCESS;
+    int step = bound ? sqlite3_step(statement) : SQLITE_ERROR;
     int inserted = step == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
     sqlite3_finalize(statement);
-    return step == SQLITE_DONE ? (inserted ? 1 : 0) : ERROR_DATABASE;
+    if (step != SQLITE_DONE) return ERROR_DATABASE;
+    if (inserted) return 1;
+
+    /* A crash may leave RECEIVED forever. Reclaim only after the longest
+     * synchronous AI call plus a safety margin; the conditional update makes
+     * concurrent provider retries safe. */
+    if (db_prepare("UPDATE whatsapp_inbound_events SET received_at=datetime('now') "
+                   "WHERE event_id=? AND sender_phone=? AND status='RECEIVED' "
+                   "AND received_at<=datetime('now','-2 minutes');", &statement) != SUCCESS)
+        return ERROR_DATABASE;
+    bound = db_bind_text(statement, 1, event_id) == SUCCESS &&
+            db_bind_text(statement, 2, phone) == SUCCESS;
+    step = bound ? sqlite3_step(statement) : SQLITE_ERROR;
+    int reclaimed = step == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+    sqlite3_finalize(statement);
+    if (step != SQLITE_DONE) return ERROR_DATABASE;
+    return reclaimed ? 1 : 0;
 }
 
 static void finish_inbound_event(const char *event_id, const char *status,
@@ -176,10 +164,10 @@ static void finish_inbound_event(const char *event_id, const char *status,
     sqlite3_stmt *statement = NULL;
     if (db_prepare("UPDATE whatsapp_inbound_events SET status=?,reply=? WHERE event_id=?;", &statement) != SUCCESS)
         return;
-    db_bind_text(statement, 1, status);
-    db_bind_text(statement, 2, reply ? reply : "");
-    db_bind_text(statement, 3, event_id);
-    (void)sqlite3_step(statement);
+    int bound = db_bind_text(statement, 1, status) == SUCCESS &&
+                db_bind_text(statement, 2, reply ? reply : "") == SUCCESS &&
+                db_bind_text(statement, 3, event_id) == SUCCESS;
+    if (bound) (void)sqlite3_step(statement);
     sqlite3_finalize(statement);
 }
 
@@ -459,17 +447,8 @@ int ctrl_whatsapp_notify_class(const HttpRequest *req, HttpResponse *res)
         return http_respond_error(res, 403, "forbidden");
 
     char message[4001] = {0};
-    long long class_id = 0;
-    const char *class_field = strstr(req->body, "\"class_id\":");
-    if (class_field) {
-        class_field += sizeof("\"class_id\":") - 1;
-        while (*class_field == ' ' || *class_field == '\t') ++class_field;
-        char *end = NULL;
-        errno = 0;
-        class_id = strtoll(class_field, &end, 10);
-        if (errno == ERANGE || end == class_field || class_id <= 0 ||
-            (*end != ',' && *end != '}' && !isspace((unsigned char)*end))) class_id = 0;
-    }
+    int64_t class_id = 0;
+    if (!json_object_get_int64(req->body, "class_id", &class_id)) class_id = 0;
     if (class_id <= 0 || !json_extract_string(req->body, "message", message, sizeof message) ||
         !validation_length_between(message, 1, 4000))
         return http_respond_error(res, 400, "class_id and message are required");
@@ -529,5 +508,12 @@ int ctrl_whatsapp_notify_class(const HttpRequest *req, HttpResponse *res)
 int ctrl_health(const HttpRequest *req, HttpResponse *res)
 {
     (void)req;
-    return http_respond_json(res, 200, "{\"status\":\"ok\"}");
+    sqlite3_stmt *statement = NULL;
+    if (db_prepare("SELECT 1;", &statement) != SUCCESS)
+        return http_respond_error(res, 503, "database unavailable");
+    int ready = sqlite3_step(statement) == SQLITE_ROW;
+    sqlite3_finalize(statement);
+    if (!ready) return http_respond_error(res, 503, "database unavailable");
+    return http_respond_json(res, 200,
+        "{\"status\":\"ready\",\"checks\":{\"database\":true}}");
 }

@@ -1,9 +1,12 @@
 /* Cliente C da API escolar de mensagens. Usa somente whoami, inbox, reply e ref. */
+#include "classes.h"
+#include "tasks.h"
 #include "escola_api.h"
 #include "config.h"
 #include "validation.h"
 #include "ai.h"
 #include "logger.h"
+#include "whatsapp.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -33,7 +36,7 @@
 #define ESCOLA_API_RESPONSE_MAX (1024U * 1024U)
 #define ESCOLA_API_MESSAGE_MAX 4000U
 #define ESCOLA_API_CURSOR_MAX 128U
-#define ESCOLA_AUTO_POLL_SECONDS 240U
+#define ESCOLA_AUTO_POLL_SECONDS 20U
 #define ESCOLA_AUTO_PAGE_SIZE 20
 
 typedef struct {
@@ -1088,6 +1091,7 @@ static int worker_handle_message(const AppConfig *cfg, const char *ledger,
                                 const char *object, size_t length)
 {
     char id[64] = {0}, moderation[32] = {0}, kind[32] = {0};
+    char from_ref[80] = {0};
     char text[ESCOLA_API_MESSAGE_MAX + 1] = {0};
     if (!json_get_string(object, length, "id", id, sizeof id) ||
         !valid_message_id(id)) return ERROR_HTTP;
@@ -1099,6 +1103,7 @@ static int worker_handle_message(const AppConfig *cfg, const char *ledger,
         strcmp(moderation, "ok") != 0 ||
         !json_get_string(object, length, "kind", kind, sizeof kind))
         return worker_mark_done(ledger, id) ? SUCCESS : ERROR_INTERNAL;
+    (void)json_get_string(object, length, "from_ref", from_ref, sizeof from_ref);
 
     int has_text = json_get_string(object, length, "text", text, sizeof text);
     if (!has_text && strcmp(kind, "image") == 0) {
@@ -1120,6 +1125,11 @@ static int worker_handle_message(const AppConfig *cfg, const char *ledger,
     if (!has_text || !text[0] || worker_opt_out_command(text))
         return worker_mark_done(ledger, id) ? SUCCESS : ERROR_INTERNAL;
 
+    if (from_ref[0] && whatsapp_store_anonymous_inbox_message(id, from_ref, text, kind) != SUCCESS) {
+        log_warn("escola: nao foi possivel guardar mensagem %s no historico local", id);
+        return ERROR_DATABASE;
+    }
+
     char answer[4001];
     int rc;
     if (strlen(text) > 800) {
@@ -1127,8 +1137,12 @@ static int worker_handle_message(const AppConfig *cfg, const char *ledger,
                  "Sua mensagem ficou longa demais para eu analisar de uma vez. "
                  "Pode dividi-la em partes menores?");
         rc = SUCCESS;
+    } else if (from_ref[0]) {
+        rc = whatsapp_receive_anonymous_message(from_ref, text, answer, sizeof answer);
     } else {
-        rc = ai_answer_student_question(text, "", answer, sizeof answer);
+        char context[1500] = {0};
+        whatsapp_build_school_context(context, sizeof context);
+        rc = ai_answer_student_question(text, context, answer, sizeof answer);
     }
     if (rc != SUCCESS || !answer[0]) {
         if (rc == ERROR_AI)
@@ -1143,6 +1157,8 @@ static int worker_handle_message(const AppConfig *cfg, const char *ledger,
         return worker_mark_done(ledger, id) ? SUCCESS : ERROR_INTERNAL;
     }
     if (rc != SUCCESS) return rc;
+    if (from_ref[0] && whatsapp_mark_anonymous_inbox_message(id, "PROCESSED") != SUCCESS)
+        log_warn("escola: nao foi possivel atualizar status local da mensagem %s", id);
     if (!worker_mark_done(ledger, id)) return ERROR_INTERNAL;
     log_info("escola: resposta automática aceita para mensagem %s", id);
     return SUCCESS;
@@ -1274,17 +1290,28 @@ static void escola_worker_loop(volatile int *should_stop)
     }
     log_info("escola: tutoria automática ativa; verificará mensagens a cada %u segundos",
              ESCOLA_AUTO_POLL_SECONDS);
+    unsigned consecutive_ai_failures = 0;
     while (!*should_stop) {
         int rc = worker_process_batch(&cfg);
-        if (rc == ERROR_AI)
-            log_warn("escola: serviço de IA indisponível; mensagem pendente será tentada novamente");
-        else if (rc != SUCCESS && rc != ERROR_NOT_FOUND)
-            log_warn("escola: processamento automático será tentado novamente (erro interno %d)", rc);
+        unsigned ai_retry_delay = 0;
+        if (rc == ERROR_AI) {
+            if (consecutive_ai_failures < 5) ++consecutive_ai_failures;
+            ai_retry_delay = ESCOLA_AUTO_POLL_SECONDS;
+            for (unsigned i = 1; i < consecutive_ai_failures && ai_retry_delay < 300; ++i)
+                ai_retry_delay = ai_retry_delay > 150 ? 300 : ai_retry_delay * 2;
+            log_warn("escola: serviço de IA indisponível; mensagem pendente será tentada novamente em %u segundos",
+                     ai_retry_delay);
+        } else {
+            consecutive_ai_failures = 0;
+            if (rc != SUCCESS && rc != ERROR_NOT_FOUND)
+                log_warn("escola: processamento automático será tentado novamente (erro interno %d)", rc);
+        }
         if (rc == ERROR_CONFIG || rc == ERROR_NOT_IMPLEMENTED) {
             log_error("escola: API recusou configuração ou rota; respostas automáticas desativadas");
             return;
         }
-        unsigned delay = g_escola_retry_delay ? g_escola_retry_delay : ESCOLA_AUTO_POLL_SECONDS;
+        unsigned delay = g_escola_retry_delay ? g_escola_retry_delay
+            : (ai_retry_delay ? ai_retry_delay : ESCOLA_AUTO_POLL_SECONDS);
         g_escola_retry_delay = 0;
         worker_wait(should_stop, delay);
     }

@@ -20,6 +20,8 @@ typedef struct {
 /* Autentica por telefone + (opcional) senha. */
 int auth_login_phone(const char *phone, const char *password_or_null,
                      AuthSession *out);
+int auth_login_phone_from_ip(const char *phone, const char *password_or_null,
+                             const char *client_ip, AuthSession *out);
 
 /* Cria token de sessão (opaco). */
 int auth_session_create(AuthSession *s, char *token_out, size_t cap);

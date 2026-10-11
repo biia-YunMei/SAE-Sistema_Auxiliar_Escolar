@@ -14,11 +14,13 @@
 #include "validation.h"
 #include "logger.h"
 #include "controllers.h"
+#include "json_util.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <errno.h>
 
 static void json_escape(const char *value, char *out, size_t cap)
 {
@@ -35,41 +37,13 @@ static void json_escape(const char *value, char *out, size_t cap)
 /* extrai "key":"value" ou "key":number do body JSON ingênuo */
 static int extract_str(const char *body, const char *key, char *out, size_t cap)
 {
-    char needle[64]; int n = snprintf(needle, sizeof needle, "\"%s\":\"", key);
-    if (n < 0 || (size_t)n >= sizeof needle) return 0;
-    const char *p = strstr(body, needle);
-    if (!p) return 0;
-    p += n;
-    size_t used = 0;
-    while (*p && *p != '"') {
-        char ch = *p++;
-        if (ch == '\\') {
-            if (!*p) return 0;
-            ch = *p++;
-            if (ch == 'n') ch = '\n';
-            else if (ch == 'r') ch = '\r';
-            else if (ch == 't') ch = '\t';
-        }
-        if (used + 1 >= cap) return 0;
-        out[used++] = ch;
-    }
-    if (*p != '"') return 0;
-    out[used] = '\0';
-    return 1;
+    return json_object_get_string(body, key, out, cap);
 }
 
 static long long extract_int(const char *body, const char *key, long long defv)
 {
-    char needle[64]; int n = snprintf(needle, sizeof needle, "\"%s\":", key);
-    if (n < 0 || (size_t)n >= sizeof needle) return defv;
-    const char *p = strstr(body, needle);
-    if (!p) return defv;
-    p += n;
-    while (*p == ' ' || *p == '\t') p++;
-    char *end = NULL;
-    long long v = strtoll(p, &end, 10);
-    if (end == p) return defv;
-    return v;
+    int64_t value;
+    return json_object_get_int64(body, key, &value) ? (long long)value : defv;
 }
 
 static int get_query_param(const char *query, const char *name,
@@ -94,6 +68,19 @@ static int get_query_param(const char *query, const char *name,
         p = e + 1;
     }
     return 0;
+}
+
+static long long get_query_integer(const char *query, const char *name,
+                                   long long fallback, long long maximum)
+{
+    char value[32];
+    if (!get_query_param(query, name, value, sizeof value)) return fallback;
+    errno = 0;
+    char *end = NULL;
+    long long result = strtoll(value, &end, 10);
+    if (errno == ERANGE || end == value || *end || result < 0 || result > maximum)
+        return -1;
+    return result;
 }
 
 /* resolve sessão via Authorization; se falhar, devolve 401. */
@@ -161,6 +148,10 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
     int has_exact = get_query_param(req->query, "due_date", exact_date, sizeof exact_date);
     int has_from = get_query_param(req->query, "date_from", date_from, sizeof date_from);
     int has_to = get_query_param(req->query, "date_to", date_to, sizeof date_to);
+    long long limit = get_query_integer(req->query, "limit", 20, 20);
+    long long offset = get_query_integer(req->query, "offset", 0, 100000);
+    if (limit < 1 || offset < 0)
+        return http_respond_error(res, 400, "invalid pagination");
     if ((has_exact && !validation_is_valid_date(exact_date)) ||
         (has_from && !validation_is_valid_date(date_from)) ||
         (has_to && !validation_is_valid_date(date_to)) ||
@@ -172,9 +163,11 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
     if (!mine && !all) {
         if (!get_query_param(req->query, "class_id", qbuf, sizeof qbuf))
             return http_respond_error(res, 400, "class_id required");
-        class_id = strtoll(qbuf, NULL, 10);
-        if (class_id <= 0) return http_respond_error(res, 400, "class_id required");
-    } else if (s.type != USER_TYPE_PROF) {
+        int64_t parsed_class_id;
+        if (!parse_int64_strict(qbuf, &parsed_class_id) || parsed_class_id <= 0)
+            return http_respond_error(res, 400, "class_id required");
+        class_id = (long long)parsed_class_id;
+    } else if (mine && s.type != USER_TYPE_PROF) {
         return http_respond_error(res, 403, "forbidden");
     }
 
@@ -198,6 +191,7 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
             return http_respond_error(res, 403, "teacher profile not found");
         rc = tasks_list_by_teacher((int64_t)teacher_id, false, &list, &n);
     } else rc = tasks_list_by_class((int64_t)class_id, false, &list, &n);
+    if (rc == ERROR_TOO_LONG) return http_respond_error(res, 413, "task history too large to list safely");
     if (rc != SUCCESS) { return http_respond_error(res, 500, "list failed"); }
 
     if (has_exact || has_from || has_to) {
@@ -213,14 +207,19 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
         n = kept;
     }
 
-    /* Renderiza JSON manualmente. */
-    if (n > (SIZE_MAX - 256) / 8192) { free(list); return http_respond_error(res, 500, "response too large"); }
-    size_t cap = 256 + n * 8192;
+    /* The result set is bounded in memory; only one page is serialized. */
+    size_t start = (size_t)offset < n ? (size_t)offset : n;
+    size_t end = n - start > (size_t)limit ? start + (size_t)limit : n;
+    size_t page_count = end - start;
+    if (page_count > (SIZE_MAX - 512) / 8192) { free(list); return http_respond_error(res, 500, "response too large"); }
+    size_t cap = 512 + page_count * 8192;
     char *out = (char *)malloc(cap);
     if (!out) { free(list); return http_respond_error(res, 500, "oom"); }
     size_t p = 0;
-    p += (size_t)snprintf(out + p, cap - p, "{\"count\":%zu,\"items\":[", n);
-    for (size_t i = 0; i < n; i++) {
+    p += (size_t)snprintf(out + p, cap - p,
+        "{\"count\":%zu,\"total\":%zu,\"limit\":%lld,\"offset\":%lld,\"has_more\":%s,\"items\":[",
+        page_count, n, limit, offset, end < n ? "true" : "false");
+    for (size_t i = start; i < end; i++) {
         char subject[128], title[256], description[2048];
         json_escape(list[i].subject, subject, sizeof subject);
         json_escape(list[i].title, title, sizeof title);
@@ -229,7 +228,7 @@ int ctrl_tasks_list(const HttpRequest *req, HttpResponse *res)
             "%s{\"id\":%lld,\"teacher_id\":%lld,\"class_id\":%lld,"
             "\"subject\":\"%s\",\"title\":\"%s\",\"description\":\"%s\","
             "\"due_date\":\"%s\",\"status\":\"%s\",\"created_at\":\"%s\"}",
-            i ? "," : "",
+            i > start ? "," : "",
             (long long)list[i].id, (long long)list[i].teacher_id,
             (long long)list[i].class_id,
             subject, title, description,
@@ -307,8 +306,10 @@ int ctrl_tasks_update(const HttpRequest *req, HttpResponse *res, const char *id_
     if (s.type != USER_TYPE_COORD && s.type != USER_TYPE_PROF)
         return http_respond_error(res, 403, "forbidden");
 
-    long long task_id = strtoll(id_str, NULL, 10);
-    if (task_id <= 0) return http_respond_error(res, 400, "invalid id");
+    int64_t parsed_task_id;
+    if (!parse_int64_strict(id_str, &parsed_task_id) || parsed_task_id <= 0)
+        return http_respond_error(res, 400, "invalid id");
+    long long task_id = (long long)parsed_task_id;
 
     char subject[64]={0}, title[121]={0}, desc[1024]={0}, due[16]={0};
     if (!extract_str(req->body, "subject", subject, sizeof subject) ||
@@ -338,8 +339,10 @@ int ctrl_tasks_delete(const HttpRequest *req, HttpResponse *res, const char *id_
     if (s.type != USER_TYPE_COORD && s.type != USER_TYPE_PROF)
         return http_respond_error(res, 403, "forbidden");
 
-    long long task_id = strtoll(id_str, NULL, 10);
-    if (task_id <= 0) return http_respond_error(res, 400, "invalid id");
+    int64_t parsed_task_id;
+    if (!parse_int64_strict(id_str, &parsed_task_id) || parsed_task_id <= 0)
+        return http_respond_error(res, 400, "invalid id");
+    long long task_id = (long long)parsed_task_id;
     bool is_coord = (s.type == USER_TYPE_COORD);
     long long acting_teacher_id = 0;
     if (!is_coord && teacher_id_for_session(&s, &acting_teacher_id) != SUCCESS)

@@ -148,17 +148,22 @@ Por padrão, o executável, objetos e testes compilados são gerados em
 `~/.cache/school-system-artifacts`, uma pasta fora do repositório. Para escolher
 outro local, use `make ARTIFACT_DIR=/caminho/desejado`.
 
-Com libcurl instalado, o adaptador do WhatsApp e o cliente de IA remota são
-incluídos automaticamente no build. Para configurar a IA, copie `.env.example`
-para `.env` e informe a chave e o identificador do modelo:
+Com libcurl instalado, o worker de inbox/reply da API escolar e o cliente de IA
+remota são incluídos automaticamente no build. Copie `.env.example` para `.env`
+e informe localmente as chaves do Gemini e da API escolar:
 
 ```bash
 cp .env.example .env
-# Edite AI_API_KEY e AI_MODEL dentro do .env
+# Edite AI_API_KEY e ESCOLA_API_KEY dentro do .env
 make
 ```
 
-Sem chave/modelo, as rotinas continuam no modo local. Veja
+A tutoria carrega as regras pedagógicas de `~/instruçoes/AIconfig.md` quando o
+arquivo está disponível. O Markdown é relido a cada pergunta e limitado a 3500
+bytes. Para usar outro arquivo, defina `AI_INSTRUCTIONS_FILE`; na falta do
+arquivo, o SAE mantém as regras de tutoria embutidas no código.
+
+Sem as chaves, as integrações remotas ficam indisponíveis. Veja
 [`docs/CONFIGURACAO_E_PORTABILIDADE.md`](docs/CONFIGURACAO_E_PORTABILIDADE.md)
 para as variáveis de configuração.
 
@@ -248,29 +253,37 @@ SAE_UI=plain sae turma listar    # força a saída simples
 | PUT/DELETE | /api/users/:id        | COORD   | edita/exclui usuário |
 | GET/POST | /api/students          | COORD   | lista/cadastra alunos sem criar login |
 | POST   | /api/students/class      | COORD/PROF vinculado | vincula aluno a turma |
-| GET    | /api/classes             | COORD/PROF | lista turmas |
-| POST   | /api/classes             | COORD/PROF | cria turma |
-| PUT/DELETE | /api/classes/:id      | COORD/PROF vinculado | edita/exclui turma |
+| GET    | /api/teachers            | COORD | lista professores |
+| POST   | /api/teachers            | COORD | cadastra professor |
+| DELETE | /api/teachers/:id        | COORD | remove professor |
+| GET    | /api/classes             | COORD/PROF vinculado | lista turmas permitidas |
+| POST   | /api/classes             | COORD | cria turma |
+| PUT/DELETE | /api/classes/:id      | COORD | edita/inativa turma |
 | POST   | /api/classes/:id/teachers| COORD   | vincula professor |
 | DELETE | /api/classes/:id/teachers/:tid | COORD | remove vínculo |
 | GET    | /api/tasks?class_id=X   | conforme turma/cargo | lista tarefas da turma |
+| GET    | /api/tasks?mine=1       | PROF   | lista tarefas do professor autenticado |
+| GET    | /api/tasks?all=1        | COORD  | lista todas as tarefas |
 | POST   | /api/tasks               | PROF/COORD | cria tarefa |
 | PUT    | /api/tasks/:id           | PROF/COORD | atualiza tarefa |
 | DELETE | /api/tasks/:id           | PROF/COORD | remove tarefa |
-| POST   | /api/whatsapp/webhook    | externo | recebe mensagem |
+| GET    | /api/notices             | COORD/PROF ou aluno autenticado | lista comunicados permitidos |
+| POST   | /api/notices             | COORD | cria comunicado |
+| PUT/DELETE | /api/notices/:id      | COORD | edita/remove comunicado |
+| GET    | /api/messages            | COORD; PROF vê apenas mensagens de suas turmas | histórico local do inbox |
 
 ## 9. Autenticação e permissões
 
 * Login: `POST /api/auth` com `{phone, password}`. Alunos são recusados e não possuem login.
 * Token opaco (hex 64 chars) devolvido e usado em `Authorization: Bearer <token>`.
 * Sessões em memória com TTL (`SESSION_TIMEOUT_MIN`).
-* **Toda rota, exceto saúde, login, bootstrap e webhook, exige login.**
+* **Toda rota, exceto saúde, login e bootstrap, exige login.**
 * **Toda verificação de permissão passa pelo back-end**, não apenas pelo CLI.
 
 | Cargo | Pode executar |
 |---|---|
 | `COORD` | Todos os comandos administrativos e operacionais. |
-| `PROF` | Listar usuários; criar/listar/editar/excluir suas turmas; vincular alunos em suas turmas; criar/listar/editar/excluir suas tarefas; enviar WhatsApp. |
+| `PROF` | Listar turmas vinculadas; criar/listar/editar/excluir suas tarefas; consultar mensagens anônimas recebidas apenas das turmas vinculadas. |
 | `STUD` | Sem login; nome, telefone e série são cadastrados pela coordenação. Consulta atividades pelo WhatsApp. |
 
 ## 10. Banco de Dados
