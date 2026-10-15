@@ -26,11 +26,13 @@ static const StaticAsset static_assets[] = {
     { "/index.html", "index.html", "text/html; charset=utf-8" },
     { "/setup.html", "setup.html", "text/html; charset=utf-8" },
     { "/admin-register.html", "admin-register.html", "text/html; charset=utf-8" },
+    { "/status.html", "status.html", "text/html; charset=utf-8" },
     { "/professores.html", "professores.html", "text/html; charset=utf-8" },
     { "/coordenacao.html", "coordenacao.html", "text/html; charset=utf-8" },
     { "/css/style.css", "css/style.css", "text/css; charset=utf-8" },
     { "/js/api.js", "js/api.js", "text/javascript; charset=utf-8" },
-    { "/js/script.js", "js/script.js", "text/javascript; charset=utf-8" }
+    { "/js/script.js", "js/script.js", "text/javascript; charset=utf-8" },
+    { "/img/zap-escola.svg", "img/zap-escola.svg", "image/svg+xml; charset=utf-8" }
 };
 
 static int serve_static_asset(const HttpRequest *req, HttpResponse *res)

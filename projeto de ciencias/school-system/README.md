@@ -159,8 +159,8 @@ make
 ```
 
 A tutoria carrega as regras pedagógicas de `~/instruçoes/AIconfig.md` quando o
-arquivo está disponível. O Markdown é relido a cada pergunta e limitado a 3500
-bytes. Para usar outro arquivo, defina `AI_INSTRUCTIONS_FILE`; na falta do
+arquivo está disponível. O Markdown é relido a cada pergunta e limitado a 6000
+bytes; o log informa o caminho e o tamanho carregados. Para usar outro arquivo, defina `AI_INSTRUCTIONS_FILE`; na falta do
 arquivo, o SAE mantém as regras de tutoria embutidas no código.
 
 Sem as chaves, as integrações remotas ficam indisponíveis. Veja
@@ -185,9 +185,12 @@ Em outro terminal, crie o primeiro coordenador. Este é o único comando que
 pode ser usado sem uma sessão iniciada:
 
 ```bash
-sae -ca -n "Nome do coordenador" -p +5566999999999 -s sua_senha
-sae login -p +5566999999999 -s sua_senha
+sae -ca -n "Nome do coordenador" -p +5566999999999
+sae login -p +5566999999999
 ```
+
+O terminal solicita a senha sem exibi-la. Não passe senhas como argumentos do
+comando, pois elas podem ficar no histórico do shell e visíveis na lista de processos.
 
 Depois do login, a sessão fica salva localmente em `.sae-session`. Use
 `sae logout` ao terminar.
@@ -198,9 +201,9 @@ Use `sae --help` para consultar todos os comandos. Os principais são:
 
 ```bash
 # Usuários — somente COORD
-sae usuario criar -n NOME -p TELEFONE -t COORD|PROF|STUD [-s SENHA]
+sae usuario criar -n NOME -p TELEFONE -t COORD|PROF|STUD
 sae usuario listar
-sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]
+sae usuario editar -u ID -n NOME -p TELEFONE [--senha]
 sae usuario excluir -u ID
 
 # Turmas — COORD e PROF
@@ -220,9 +223,10 @@ sae tarefa listar -c ID_TURMA
 sae tarefa editar -i ID -m MATERIA -n TITULO -v AAAA-MM-DD [-d DESCRICAO]
 sae tarefa excluir -i ID
 
-# WhatsApp — COORD e PROF
-sae whatsapp enviar -p TELEFONE -m MENSAGEM
-sae whatsapp turma -c ID_TURMA -m MENSAGEM
+# WhatsApp — PROFESSOR autenticado
+sae whatsapp vincular
+# Responder uma mensagem recebida pela inbox
+sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM
 ```
 
 O professor só pode administrar turmas vinculadas a ele e tarefas sob sua
@@ -271,6 +275,7 @@ SAE_UI=plain sae turma listar    # força a saída simples
 | POST   | /api/notices             | COORD | cria comunicado |
 | PUT/DELETE | /api/notices/:id      | COORD | edita/remove comunicado |
 | GET    | /api/messages            | COORD; PROF vê apenas mensagens de suas turmas | histórico local do inbox |
+| POST   | /api/whatsapp/teacher-link-code | PROF | gera código temporário de vínculo WhatsApp |
 
 ## 9. Autenticação e permissões
 
@@ -317,11 +322,12 @@ Coordenador (painel / API)
    └── vincula professor ↔ turma
 
 Professor (WhatsApp)
-   ├── envia mensagem
-   ├── backend identifica (telefone)
-   ├── IA extrai {turma, disciplina, descrição, data}
-   ├── professor CONFIRMA
-   └── tarefa gravada em `tasks`
+   ├── autentica no SAE e gera código temporário com `sae whatsapp vincular`
+   ├── envia `VINCULAR <código>` ao número da escola pela inbox
+   ├── sistema associa o remetente pseudônimo ao usuário autenticado
+   ├── IA interpreta tarefa; sistema valida turma e vínculo professor↔turma
+   ├── professor confirma; tarefa é gravada em `tasks`
+   └── para recados, envia `RECADO <turma>: <texto>` e confirma antes de publicar
 
 Aluno (WhatsApp)
    ├── envia pergunta
@@ -330,6 +336,11 @@ Aluno (WhatsApp)
    ├── IA orienta por etapas (nunca entrega resposta final)
    └── resposta enviada pelo WhatsApp
 ```
+
+O código de vínculo expira em 10 minutos, é de uso único e fica armazenado no
+banco somente como hash. O remetente anônimo não pode publicar antes do vínculo.
+Tarefas e recados são publicados para consulta quando o aluno pergunta; a API
+escolar atual não permite iniciar conversa nem enviar notificações em massa.
 
 ## 13. Testes
 

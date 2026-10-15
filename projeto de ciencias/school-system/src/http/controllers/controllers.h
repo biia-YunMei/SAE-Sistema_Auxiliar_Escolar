@@ -30,6 +30,7 @@ int ctrl_students_create(const HttpRequest *req, HttpResponse *res);
 int ctrl_students_list(const HttpRequest *req, HttpResponse *res);
 int ctrl_messages_list(const HttpRequest *req, HttpResponse *res);
 int ctrl_anonymous_enrollment_code(const HttpRequest *req, HttpResponse *res);
+int ctrl_whatsapp_teacher_link_code(const HttpRequest *req, HttpResponse *res);
 
 int ctrl_classes_list      (const HttpRequest *req, HttpResponse *res);
 int ctrl_classes_create    (const HttpRequest *req, HttpResponse *res);

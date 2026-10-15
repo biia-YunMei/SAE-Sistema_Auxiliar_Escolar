@@ -9,6 +9,7 @@
 #include "whatsapp_adapter.h"
 #include "logger.h"
 #include "config.h"
+#include "validation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,20 @@
 
 struct MemBuf { char *data; size_t size; };
 #define WHATSAPP_RESPONSE_MAX (1024U * 1024U)
+
+static int whatsapp_url_is_secure(const char *url)
+{
+    if (!url || strncmp(url, "https://", 8) != 0) return 0;
+    for (const unsigned char *p = (const unsigned char *)url; *p; ++p)
+        if (*p <= 0x20 || *p == 0x7f || *p == '\\' || *p == '#') return 0;
+    const unsigned char *host = (const unsigned char *)url + 8;
+    if (!*host || *host == '/' || *host == '?' || *host == '#') return 0;
+    for (const unsigned char *p = host; *p && *p != '/' && *p != '?'; ++p) {
+        if (*p == '@') return 0;
+    }
+    return 1;
+}
+
 static size_t cb_write(void *ptr, size_t s, size_t n, void *u)
 {
     if (s && n > SIZE_MAX / s) return 0;
@@ -74,7 +89,7 @@ static int json_escape(char *out, size_t cap, const char *text)
 
 int whatsapp_send_via_api(const char *phone, const char *text)
 {
-    if (!phone || !text) return ERROR_INVALID_INPUT;
+    if (!phone || !text || !validation_is_valid_phone(phone)) return ERROR_INVALID_INPUT;
 
 #if !defined(WHATSAPP_USE_CURL)
     log_warn("whatsapp_send_via_api: libcurl indisponível, mensagem não enviada");
@@ -85,10 +100,16 @@ int whatsapp_send_via_api(const char *phone, const char *text)
     if (!cfg) return ERROR_CONFIG;
 
     if (!cfg->whatsapp_api_url[0] || !cfg->whatsapp_api_token[0] ||
-        !cfg->whatsapp_phone_id[0]) {
+        !cfg->whatsapp_phone_id[0] || !whatsapp_url_is_secure(cfg->whatsapp_api_url)) {
         log_warn("whatsapp: credenciais ausentes no .env");
         return ERROR_CONFIG;
     }
+    for (const unsigned char *p = (const unsigned char *)cfg->whatsapp_phone_id; *p; ++p)
+        if (!((*p >= '0' && *p <= '9') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= 'a' && *p <= 'z') || *p == '-' || *p == '_'))
+            return ERROR_CONFIG;
+    for (const unsigned char *p = (const unsigned char *)cfg->whatsapp_api_token; *p; ++p)
+        if (*p == '\r' || *p == '\n' || *p == 0x7f) return ERROR_CONFIG;
 
     char endpoint[768];
     int endpoint_len = snprintf(endpoint, sizeof endpoint, "%s/%s/messages",
@@ -126,6 +147,12 @@ int whatsapp_send_via_api(const char *phone, const char *text)
 
     struct MemBuf mem = {0};
     curl_easy_setopt(c, CURLOPT_URL, endpoint);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, "https");
+#else
+    curl_easy_setopt(c, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+#endif
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 0L);
     curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
     curl_easy_setopt(c, CURLOPT_POSTFIELDS, body);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, cb_write);

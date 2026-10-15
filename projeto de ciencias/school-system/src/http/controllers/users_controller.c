@@ -158,6 +158,7 @@ int ctrl_users_update(const HttpRequest *req, HttpResponse *res, const char *id_
     if (rc == ERROR_ALREADY_EXISTS)
         return http_respond_error(res, 409, "phone already registered");
     if (rc != SUCCESS) return http_respond_error(res, 400, "update failed");
+    if (password[0]) auth_session_revoke_user((int64_t)id);
     return http_respond_json(res, 200, "{\"ok\":true,\"message\":\"user updated\"}");
 }
 

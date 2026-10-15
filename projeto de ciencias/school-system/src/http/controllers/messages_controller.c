@@ -37,10 +37,22 @@ int ctrl_messages_list(const HttpRequest *req, HttpResponse *res)
         return http_respond_error(res, 401, "invalid session");
     sqlite3_stmt *statement = NULL;
     const char *sql = session.type == USER_TYPE_COORD
-        ? "SELECT m.sender_phone,m.content,m.msg_type,m.status,m.created_at "
+        ? "SELECT m.sender_phone,"
+          "COALESCE((SELECT u.name FROM users u WHERE u.phone=m.sender_phone AND u.status='ACTIVE' LIMIT 1),"
+          "(SELECT u.name FROM whatsapp_teacher_links l JOIN users u ON u.id=l.user_id "
+          "WHERE l.from_ref=m.sender_phone AND u.status='ACTIVE' LIMIT 1),''),"
+          "CASE WHEN length(m.sender_phone) BETWEEN 9 AND 16 "
+          "AND substr(m.sender_phone,1,1)='+' AND substr(m.sender_phone,2) NOT GLOB '*[^0-9]*' "
+          "THEN m.sender_phone ELSE '' END,m.content,m.msg_type,m.status,m.created_at "
           "FROM messages m WHERE m.user_type='ANONYMOUS' ORDER BY m.id DESC LIMIT 10;"
         : session.type == USER_TYPE_PROF
-        ? "SELECT m.sender_phone,m.content,m.msg_type,m.status,m.created_at "
+        ? "SELECT m.sender_phone,"
+          "COALESCE((SELECT u.name FROM users u WHERE u.phone=m.sender_phone AND u.status='ACTIVE' LIMIT 1),"
+          "(SELECT u.name FROM whatsapp_teacher_links l JOIN users u ON u.id=l.user_id "
+          "WHERE l.from_ref=m.sender_phone AND u.status='ACTIVE' LIMIT 1),''),"
+          "CASE WHEN length(m.sender_phone) BETWEEN 9 AND 16 "
+          "AND substr(m.sender_phone,1,1)='+' AND substr(m.sender_phone,2) NOT GLOB '*[^0-9]*' "
+          "THEN m.sender_phone ELSE '' END,m.content,m.msg_type,m.status,m.created_at "
           "FROM messages m JOIN anonymous_students a ON a.phone=m.sender_phone "
           "JOIN teacher_classes tc ON tc.class_id=a.class_id "
           "JOIN teachers t ON t.id=tc.teacher_id "
@@ -62,13 +74,16 @@ int ctrl_messages_list(const HttpRequest *req, HttpResponse *res)
     size_t count = 0;
     int step;
     while ((step = sqlite3_step(statement)) == SQLITE_ROW) {
-        char sender[192], content[24578], kind[32], status[32], created[96];
+        char sender[192], name[256], phone[32], content[24578], kind[32], status[32], created[96];
         message_json((const char *)sqlite3_column_text(statement, 0), sender, sizeof sender);
-        message_json((const char *)sqlite3_column_text(statement, 1), content, sizeof content);
-        message_json((const char *)sqlite3_column_text(statement, 2), kind, sizeof kind);
-        message_json((const char *)sqlite3_column_text(statement, 3), status, sizeof status);
-        message_json((const char *)sqlite3_column_text(statement, 4), created, sizeof created);
-        size_t needed = strlen(sender) + strlen(content) + strlen(kind) + strlen(status) + strlen(created) + 160;
+        message_json((const char *)sqlite3_column_text(statement, 1), name, sizeof name);
+        message_json((const char *)sqlite3_column_text(statement, 2), phone, sizeof phone);
+        message_json((const char *)sqlite3_column_text(statement, 3), content, sizeof content);
+        message_json((const char *)sqlite3_column_text(statement, 4), kind, sizeof kind);
+        message_json((const char *)sqlite3_column_text(statement, 5), status, sizeof status);
+        message_json((const char *)sqlite3_column_text(statement, 6), created, sizeof created);
+        size_t needed = strlen(sender) + strlen(name) + strlen(phone) + strlen(content) +
+                        strlen(kind) + strlen(status) + strlen(created) + 224;
         if (used + needed + 32 > capacity) {
             size_t next = capacity;
             while (next < used + needed + 32 && next <= SIZE_MAX / 2) next *= 2;
@@ -84,8 +99,9 @@ int ctrl_messages_list(const HttpRequest *req, HttpResponse *res)
             json = grown; capacity = next;
         }
         int n = snprintf(json + used, capacity - used,
-            "%s{\"sender_ref\":\"%s\",\"content\":\"%s\",\"kind\":\"%s\",\"status\":\"%s\",\"created_at\":\"%s\"}",
-            count ? "," : "", sender, content, kind, status, created);
+            "%s{\"sender_ref\":\"%s\",\"sender_name\":\"%s\",\"sender_phone\":\"%s\","
+            "\"content\":\"%s\",\"kind\":\"%s\",\"status\":\"%s\",\"created_at\":\"%s\"}",
+            count ? "," : "", sender, name, phone, content, kind, status, created);
         if (n < 0 || (size_t)n >= capacity - used) {
             free(json); sqlite3_finalize(statement);
             return http_respond_error(res, 500, "response too large");

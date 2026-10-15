@@ -70,9 +70,18 @@ int wr_classes_delete(const HttpRequest *req, HttpResponse *res)
 
 int wr_classes_add_teacher(const HttpRequest *req, HttpResponse *res)
 {
-    const char *p = req->path + strlen("/api/classes/");
-    if (!*p) return http_respond_error(res, 400, "class_id required");
-    return ctrl_classes_add_teacher(req, res, p);
+    const char *rest = req->path + strlen("/api/classes/");
+    const char *slash = strchr(rest, '/');
+    if (!slash || strcmp(slash, "/teachers") != 0)
+        return http_respond_error(res, 400, "class_id required");
+
+    size_t id_length = (size_t)(slash - rest);
+    char class_id[32];
+    if (id_length == 0 || id_length >= sizeof class_id)
+        return http_respond_error(res, 400, "invalid class id");
+    memcpy(class_id, rest, id_length);
+    class_id[id_length] = '\0';
+    return ctrl_classes_add_teacher(req, res, class_id);
 }
 
 int wr_classes_remove_teacher(const HttpRequest *req, HttpResponse *res)

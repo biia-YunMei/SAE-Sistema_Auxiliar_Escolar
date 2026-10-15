@@ -75,7 +75,8 @@
             Configure seu primeiro usuário administrador para começar a usar o
             sistema de gerenciamento escolar.
           </p>
-          <button class="btn btn-teal btn-setup" id="btnSetup">
+          <p id="setupStatus" class="small text-secondary text-center" role="status">Verificando se o cadastro inicial ainda está disponível…</p>
+          <button class="btn btn-teal btn-setup" id="btnSetup" disabled>
             <i class="bi bi-plus-circle"></i> Criar Administrador
           </button>
         </div>
@@ -85,13 +86,27 @@
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/script.js"></script>
-    <script src="js/api.js"></script>
+    <script src="/js/api.js"></script>
     <script>
-      document
-        .getElementById('btnSetup')
-        .addEventListener('click', function () {
-          window.location.href = 'admin-register.html'
-        })
+      const button = document.getElementById('btnSetup')
+      const status = document.getElementById('setupStatus')
+      let setupAvailable = false
+      saeRequest('/bootstrap/status').then((result) => {
+        setupAvailable = result.available === true
+        status.textContent = setupAvailable
+          ? 'Nenhum usuário foi cadastrado. Você pode criar o primeiro administrador.'
+          : result.reason === 'user_exists'
+            ? 'O SAE já possui usuário. O cadastro inicial foi bloqueado.'
+            : 'O cadastro inicial está desativado. A coordenação técnica precisa configurar a chave de bootstrap no servidor.'
+        button.innerHTML = setupAvailable ? '<i class="bi bi-plus-circle"></i> Criar Administrador' : 'Ir para login'
+        button.disabled = false
+      }).catch((error) => {
+        status.textContent = error.message
+        button.disabled = true
+      })
+      button.addEventListener('click', function () {
+        window.location.href = setupAvailable ? 'admin-register.html' : 'index.html'
+      })
     </script>
   </body>
 </html>

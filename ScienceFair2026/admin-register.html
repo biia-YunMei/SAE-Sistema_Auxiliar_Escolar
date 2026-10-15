@@ -146,8 +146,14 @@
             Preencha os dados para registrar o primeiro administrador do
             sistema.
           </p>
+          <p id="bootstrapStatus" class="small text-secondary" role="status">Verificando se o cadastro inicial ainda está disponível…</p>
 
-          <form id="formRegistro" autocomplete="off">
+          <form id="formRegistro" autocomplete="off" hidden>
+            <div class="mb-3">
+              <label for="bootstrapKey" class="form-label">Chave de configuração inicial <span class="text-danger">*</span></label>
+              <input type="password" class="form-control" id="bootstrapKey" autocomplete="new-password" minlength="32" required />
+              <small class="form-text text-muted">Use a SAE_BOOTSTRAP_KEY configurada no ambiente do servidor. Ela não será salva no navegador.</small>
+            </div>
             <!-- Nome Completo -->
             <div class="mb-3">
               <label for="adminNome" class="form-label">
@@ -257,12 +263,14 @@
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/script.js"></script>
-    <script src="js/api.js"></script>
+    <script src="/js/api.js"></script>
     <script>
       ;(function () {
         'use strict'
 
         const form = document.getElementById('formRegistro')
+        const bootstrapStatus = document.getElementById('bootstrapStatus')
+        const bootstrapKey = document.getElementById('bootstrapKey')
         const inputNome = document.getElementById('adminNome')
         const inputTelefone = document.getElementById('adminTelefone')
         const inputSenha = document.getElementById('adminSenha')
@@ -275,6 +283,23 @@
         const erroTelefone = document.getElementById('erroTelefone')
         const erroSenha = document.getElementById('erroSenha')
         const erroConfirmSenha = document.getElementById('erroConfirmSenha')
+
+        form.inert = true
+        saeRequest('/bootstrap/status').then(function (result) {
+          if (result.available !== true) {
+            bootstrapStatus.textContent = result.reason === 'user_exists'
+              ? 'O SAE já possui um usuário. O cadastro inicial está bloqueado.'
+              : 'O cadastro inicial está desativado. Configure uma SAE_BOOTSTRAP_KEY com pelo menos 32 caracteres no servidor.'
+            form.hidden = true
+            return
+          }
+          bootstrapStatus.textContent = 'Nenhum usuário foi cadastrado. O primeiro administrador pode ser criado.'
+          form.hidden = false
+          form.inert = false
+        }).catch(function (error) {
+          bootstrapStatus.textContent = error.message || 'Não foi possível verificar o estado do cadastro.'
+          form.hidden = true
+        })
 
         // ─── MÁSCARAS E VALIDAÇÕES ───
 
@@ -456,8 +481,12 @@
             botao.disabled = true
             await saeRequest('/bootstrap', {
               method: 'POST',
-              body: JSON.stringify({ name: nome.trim(), phone: telefoneApi, password: senha }),
+              body: JSON.stringify({
+                name: nome.trim(), phone: telefoneApi, password: senha,
+                bootstrap_key: bootstrapKey.value,
+              }),
             })
+            bootstrapKey.value = ''
 
             showToast('Administrador criado com sucesso!', 'success')
 

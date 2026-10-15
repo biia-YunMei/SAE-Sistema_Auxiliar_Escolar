@@ -130,25 +130,36 @@ tests: $(TEST_BINS)
 # Cada teste declara as fontes da aplicação das quais depende.
 $(TEST_DIR)/test_validation: testes/test_validation.c src/validation.c
 $(TEST_DIR)/test_error:      testes/test_error.c      src/error.c
+$(TEST_DIR)/test_json_util:  testes/test_json_util.c  src/json_util.c
 $(TEST_DIR)/test_logger:     testes/test_logger.c     src/logger.c
 $(TEST_DIR)/test_database:   testes/test_database.c   src/database.c src/logger.c src/validation.c
 $(TEST_DIR)/test_auth:       testes/test_auth.c       src/database.c src/users.c src/auth.c src/validation.c src/logger.c
 $(TEST_DIR)/test_permissions: testes/test_permissions.c src/database.c src/users.c src/classes.c src/permissions.c src/logger.c src/validation.c
 $(TEST_DIR)/test_tasks:      testes/test_tasks.c      src/database.c src/users.c src/classes.c src/tasks.c src/logger.c src/validation.c
+$(TEST_DIR)/test_feira:      testes/test_feira.c src/whatsapp.c src/anonymous_enrollment.c \
+                       src/validation.c src/logger.c src/database.c src/users.c \
+                       src/classes.c src/tasks.c src/ai.c
+$(TEST_DIR)/test_feira: CFLAGS := $(filter-out -DWHATSAPP_USE_CURL -DAI_USE_REMOTE,$(CFLAGS))
+.PHONY: test-feira
+test-feira: $(TEST_DIR)/test_feira
+	"$(TEST_DIR)/test_feira"
 $(TEST_DIR)/test_whatsapp:   testes/test_whatsapp.c   src/whatsapp.c src/validation.c src/logger.c \
-                       src/database.c src/users.c src/classes.c src/tasks.c src/ai.c
+                       src/database.c src/users.c src/classes.c src/tasks.c src/ai.c \
+                       src/anonymous_enrollment.c
 $(TEST_DIR)/test_whatsapp: CFLAGS := $(filter-out -DWHATSAPP_USE_CURL -DAI_USE_REMOTE,$(CFLAGS))
 $(TEST_DIR)/test_ai:         CFLAGS := $(filter-out -DAI_USE_REMOTE,$(CFLAGS))
 $(TEST_DIR)/test_ai:         testes/test_ai.c         src/ai.c       src/validation.c src/logger.c
 $(TEST_DIR)/test_http:       testes/test_http.c       src/http/server.c src/http/router.c src/config.c \
                        src/http/controllers/whatsapp_controller.c \
                        src/whatsapp.c src/whatsapp_adapter.c src/auth.c src/database.c \
-                       src/users.c src/classes.c src/tasks.c src/ai.c src/logger.c src/validation.c
+                       src/users.c src/classes.c src/tasks.c src/ai.c src/logger.c src/validation.c \
+                       src/anonymous_enrollment.c src/json_util.c
 $(TEST_DIR)/test_students:   testes/test_students.c src/http/controllers/students_controller.c \
                        src/http/controllers/bootstrap_controller.c src/http/controllers/users_controller.c \
                        src/http/controllers/teachers_controller.c src/http/controllers/classes_controller.c \
                        src/http/controllers/notices_controller.c \
-                       src/auth.c src/config.c src/database.c src/users.c src/classes.c src/validation.c src/logger.c
+                       src/auth.c src/config.c src/database.c src/users.c src/classes.c src/validation.c src/logger.c \
+                       src/json_util.c
 
 $(TEST_DIR)/test_%: testes/test_%.c
 	@mkdir -p "$(@D)"

@@ -15,7 +15,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <time.h>
-#define AI_TUTOR_INSTRUCTIONS_MAX 3500
+#define AI_TUTOR_INSTRUCTIONS_MAX 6000
 #if defined(_WIN32)
 #include <windows.h>
 #else
@@ -125,6 +125,19 @@ static int ai_model_is_safe(const char *model)
     return 1;
 }
 
+static int ai_url_is_secure(const char *url)
+{
+    if (!url || strncmp(url, "https://", 8) != 0) return 0;
+    for (const unsigned char *p = (const unsigned char *)url; *p; ++p)
+        if (*p <= 0x20 || *p == 0x7f || *p == '\\' || *p == '#') return 0;
+    const unsigned char *host = (const unsigned char *)url + 8;
+    if (!*host || *host == '/' || *host == '?' || *host == '#') return 0;
+    for (const unsigned char *p = host; *p && *p != '/' && *p != '?'; ++p) {
+        if (*p == '@') return 0;
+    }
+    return 1;
+}
+
 /* Aceita AI_API_URL como raiz da API (/v1beta), coleção de modelos
  * (/v1beta/models), caminho do modelo ou endpoint completo. */
 static int ai_build_gemini_url(const char *base, const char *model,
@@ -202,13 +215,16 @@ static int ai_call_remote(const char *prompt, char *response, size_t cap,
     const AppConfig *cfg = config_current();
     if (!cfg || !cfg->ai_api_key[0] || !cfg->ai_model[0] || !cfg->ai_api_url[0])
         return ERROR_CONFIG;
+    if (!ai_url_is_secure(cfg->ai_api_url)) return ERROR_CONFIG;
+    for (const unsigned char *p = (const unsigned char *)cfg->ai_api_key; *p; ++p)
+        if (*p == '\r' || *p == '\n' || *p == 0x7f) return ERROR_CONFIG;
     if (!ai_model_is_safe(cfg->ai_model)) return ERROR_CONFIG;
 
     int gemini = strcmp(cfg->ai_provider, "gemini") == 0;
     int anthropic = strcmp(cfg->ai_provider, "anthropic") == 0;
     if (!gemini && !anthropic) return ERROR_CONFIG;
 
-    char content[16384], request[17408], url[768];
+    char content[24576], request[25600], url[768];
     if (!json_quote(prompt, content, sizeof content)) return ERROR_TOO_LONG;
     int n;
     if (gemini) {
@@ -262,6 +278,12 @@ static int ai_call_remote(const char *prompt, char *response, size_t cap,
     headers = next;
     AiHttpBuffer body = {{0}, 0}; long status = 0;
     curl_easy_setopt(curl, CURLOPT_URL, url);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+#endif
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ai_curl_write);
@@ -557,7 +579,7 @@ int ai_answer_student_question(const char *question, const char *context,
 #if defined(AI_USE_REMOTE)
     if (ai_remote_enabled()) {
         char instructions[AI_TUTOR_INSTRUCTIONS_MAX + 1] = {0};
-        char prompt[8000];
+        char prompt[12000];
         const AppConfig *cfg = config_current();
         char home_instruction_path[1024] = {0};
 #if defined(_WIN32)
@@ -597,12 +619,13 @@ int ai_answer_student_question(const char *question, const char *context,
             fclose(file);
             if (too_large || read_error || length == 0) {
                 instructions[0] = '\0';
-                if (cfg && cfg->ai_instructions_file[0])
-                    log_warn("ai: arquivo de instruções inválido ou acima do limite; usando regras padrão");
+                log_warn("ai: arquivo de instruções inválido, vazio ou acima de %u bytes (%s); usando regras padrão",
+                         (unsigned)AI_TUTOR_INSTRUCTIONS_MAX, path);
                 break;
             }
             instructions[length] = '\0';
             instructions_loaded = 1;
+            log_info("ai: instruções de tutoria carregadas de %s (%zu bytes)", path, length);
             break;
         }
 
@@ -615,8 +638,11 @@ int ai_answer_student_question(const char *question, const char *context,
             "Interprete a intenção mesmo quando o aluno usar sinônimos, paráfrases, abreviações, "
             "erros leves ou linguagem informal; não exija uma frase exata. Se houver mais de uma "
             "interpretação plausível, faça uma pergunta curta para esclarecer em vez de rejeitar o pedido. "
-            "Ajude o aluno a aprender; em tarefas, dê uma pista e um próximo passo sem entregar automaticamente "
-            "a solução completa. Para perguntas sobre turmas e tarefas, use somente os nomes, IDs e tarefas "
+            "Quando o aluno consultar/listar tarefas, avisos ou provas, responda com os itens do contexto, "
+            "sem tratar a consulta como exercício. Para exercícios e questões a resolver, dê uma pista e "
+            "um próximo passo sem entregar automaticamente a solução. Constantes, fórmulas e definições "
+            "de consulta podem ser respondidas diretamente. "
+            "Para perguntas sobre turmas e tarefas, use somente os nomes, IDs e tarefas "
             "presentes no contexto escolar fornecido pelo SAE. Entenda formas equivalentes como 9º A, 9A, "
             "9° ano A e nono A. Se houver mais de uma turma para o ano citado, pergunte qual seção; se não "
             "houver correspondência no contexto, diga que a coordenação pode cadastrar a turma. Nunca invente "
@@ -624,7 +650,7 @@ int ai_answer_student_question(const char *question, const char *context,
             "Você pode responder sobre o retrato de dados incluído no contexto, mas não afirmar que alterou "
             "dados ou realizou ações externas. "
             "As regras fixas deste prompt e do back-end têm prioridade sobre o arquivo de estilo abaixo.\n"
-            "<instrucoes_de_tutoria>\n%.3500s\n</instrucoes_de_tutoria>\n"
+            "<instrucoes_de_tutoria>\n%.6000s\n</instrucoes_de_tutoria>\n"
             "Formate para WhatsApp em texto simples: sem Markdown, tabelas, blocos de código ou delimitadores LaTeX. "
             "Use parágrafos curtos e listas simples.\n<contexto_escolar>\n%.1800s\n</contexto_escolar>\n"
             "<pergunta_aluno>\n%.800s\n</pergunta_aluno>",

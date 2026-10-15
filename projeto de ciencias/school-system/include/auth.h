@@ -31,6 +31,8 @@ int auth_session_resolve(const char *token, AuthSession *out);
 
 /* Invalida sessão. */
 int auth_session_revoke(const char *token);
+/* Invalida todas as sessões ativas de uma conta após redefinição de senha. */
+void auth_session_revoke_user(int64_t user_id);
 
 /* Define a duracao das novas sessoes (1 a 1.440 minutos). */
 void auth_set_session_timeout(int minutes);

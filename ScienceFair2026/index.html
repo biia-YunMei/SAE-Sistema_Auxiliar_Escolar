@@ -17,7 +17,15 @@
     </div></section>
     <p class="text-center text-secondary small mt-3 mb-0">SAE — criado pela equipe da Feira de Ciências 2026 · <a href="status.html" class="text-secondary">status ao vivo</a></p>
   </main>
-  <script src="js/api.js"></script>
+  <script>
+    window.saeApiRuntimeError = ''
+    window.addEventListener('error', (event) => {
+      if (event.filename && /\/js\/api\.js(?:$|\?)/.test(event.filename)) {
+        window.saeApiRuntimeError = event.message || 'erro de execução'
+      }
+    }, true)
+  </script>
+  <script src="/js/api.js" onerror="window.saeApiLoadError = true"></script>
   <script>
     const loginForm = document.getElementById('loginForm')
     const phoneInput = document.getElementById('phone')
@@ -29,9 +37,21 @@
       loginError.textContent = ''
       loginButton.disabled = true
       try {
-        const user = await saeLogin(phoneInput.value.trim(), passwordInput.value)
+        if (window.location.protocol === 'file:') {
+          throw new Error('Abra o sistema em http://127.0.0.1:8080/ com “sae servidor” em execução. Não abra o arquivo index.html diretamente.')
+        }
+        if (window.saeApiLoadError) {
+          throw new Error('Não foi possível carregar /js/api.js deste servidor. Confirme que o SAE está aberto em http://127.0.0.1:8080/.')
+        }
+        if (typeof window.saeLogin !== 'function') {
+          if (window.saeApiRuntimeError) {
+            throw new Error(`O arquivo /js/api.js falhou ao executar: ${window.saeApiRuntimeError}`)
+          }
+          throw new Error('A integração do SAE carregou sem disponibilizar o login. Recarregue a página e tente novamente.')
+        }
+        const user = await window.saeLogin(phoneInput.value.trim(), passwordInput.value)
         const page = user.type === 'PROF' ? 'professores.html' : 'coordenacao.html'
-        window.location.href = `${page}?sae_token=${encodeURIComponent(user.token)}`
+        window.location.href = page
       }
       catch (e) { loginError.textContent = e.message }
       finally { loginButton.disabled = false }

@@ -88,6 +88,10 @@ int main(void)
     CHECK(page_response.status == 200);
     CHECK(strstr(page_response.body, "SAE — Entrar") != NULL);
 
+    HttpResponse error_response = {0};
+    CHECK(http_respond_error(&error_response, 400, "mensagem \"injetada\"\\linha") == SUCCESS);
+    CHECK(strstr(error_response.body, "\\\"injetada\\\"\\\\linha") != NULL);
+
 #if defined(_WIN32)
     WSADATA w; WSAStartup(MAKEWORD(2,2), &w);
 #else

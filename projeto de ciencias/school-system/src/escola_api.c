@@ -1140,7 +1140,7 @@ static int worker_handle_message(const AppConfig *cfg, const char *ledger,
     } else if (from_ref[0]) {
         rc = whatsapp_receive_anonymous_message(from_ref, text, answer, sizeof answer);
     } else {
-        char context[1500] = {0};
+        char context[1800] = {0};
         whatsapp_build_school_context(context, sizeof context);
         rc = ai_answer_student_question(text, context, answer, sizeof answer);
     }

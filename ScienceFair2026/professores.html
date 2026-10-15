@@ -42,6 +42,7 @@
             <i class="bi bi-moon-fill" id="themeIcon"></i>
             <span class="theme-label">Tema</span>
           </button>
+          <button class="btn btn-outline-secondary" type="button" data-sae-logout>Sair</button>
         </div>
       </div>
 
@@ -399,7 +400,7 @@
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/script.js"></script>
-    <script src="js/api.js"></script>
+    <script src="/js/api.js"></script>
     <script>
       ;(function () {
         'use strict'
@@ -450,7 +451,7 @@
           const sorted = [...todasTurmas].sort()
           filtroTurma.innerHTML =
             '<option value="">Todas as turmas</option>' +
-            sorted.map((t) => `<option value="${t}">${t}</option>`).join('')
+            sorted.map((t) => `<option value="${saeEscapeHtml(t)}">${saeEscapeHtml(t)}</option>`).join('')
         }
 
         function render() {
@@ -479,9 +480,9 @@
                 (t, idx) => `
             <tr>
               <td style="padding-left:1.25rem">${idx + 1}</td>
-              <td><strong>${t.materia}</strong></td>
-              <td><span class="badge badge-teal">${formatarTurmas(t.turmas)}</span></td>
-              <td>${t.conteudo.length > 30 ? t.conteudo.substring(0, 30) + '…' : t.conteudo}</td>
+              <td><strong>${saeEscapeHtml(t.materia)}</strong></td>
+              <td><span class="badge badge-teal">${saeEscapeHtml(formatarTurmas(t.turmas))}</span></td>
+              <td>${saeEscapeHtml(t.conteudo.length > 30 ? t.conteudo.substring(0, 30) + '…' : t.conteudo)}</td>
               <td>${formatDate(t.dataEntrega)}</td>
               <td>${formatDate(t.dataLancamento)}</td>
             </tr>
@@ -509,14 +510,14 @@
                 (t, idx) => `
             <tr>
               <td style="padding-left:1.25rem">${idx + 1}</td>
-              <td><strong>${t.materia}</strong></td>
-              <td><span class="badge badge-teal">${formatarTurmas(t.turmas)}</span></td>
+              <td><strong>${saeEscapeHtml(t.materia)}</strong></td>
+              <td><span class="badge badge-teal">${saeEscapeHtml(formatarTurmas(t.turmas))}</span></td>
               <td>${formatDate(t.dataEntrega)}</td>
               <td>
                 <div class="btn-group btn-group-sm">
-                  <button class="btn-circle-sm btn-view" onclick="verTarefa(${t.id})"><i class="bi bi-eye-fill"></i></button>
-                  <button class="btn-circle-sm btn-edit" onclick="editarTarefa(${t.id})"><i class="bi bi-pencil-fill"></i></button>
-                  <button class="btn-circle-sm btn-danger" onclick="excluirTarefa(${t.id})"><i class="bi bi-trash3-fill"></i></button>
+                  <button class="btn-circle-sm btn-view" onclick="verTarefa(${Number(t.id)})"><i class="bi bi-eye-fill"></i></button>
+                  <button class="btn-circle-sm btn-edit" onclick="editarTarefa(${Number(t.id)})"><i class="bi bi-pencil-fill"></i></button>
+                  <button class="btn-circle-sm btn-danger" onclick="excluirTarefa(${Number(t.id)})"><i class="bi bi-trash3-fill"></i></button>
                 </div>
               </td>
             </tr>
@@ -533,6 +534,13 @@
 
         window.excluirTarefa = function (id) {
           if (!confirm('Excluir esta tarefa?')) return
+          if (window.saeBackendEnabled) {
+            void saeRequest(`/tasks/${Number(id)}`, { method: 'DELETE' })
+              .then(() => window.saeProfessorUI?.refreshTasks?.())
+              .then(() => showToast('Tarefa excluída!', 'success'))
+              .catch((error) => showToast(error.message, 'danger'))
+            return
+          }
           tarefas = tarefas.filter((t) => t.id !== id)
           render()
           showToast('Tarefa excluída!', 'danger')
@@ -544,9 +552,9 @@
           document.getElementById('modalVerTarefaTitulo').textContent =
             t.materia
           document.getElementById('modalVerTarefaConteudo').innerHTML = `
-          <p><strong>Matéria:</strong> ${t.materia}</p>
-          <p><strong>Turmas:</strong> ${formatarTurmas(t.turmas)}</p>
-          <p><strong>Conteúdo:</strong> ${t.conteudo}</p>
+          <p><strong>Matéria:</strong> ${saeEscapeHtml(t.materia)}</p>
+          <p><strong>Turmas:</strong> ${saeEscapeHtml(formatarTurmas(t.turmas))}</p>
+          <p><strong>Conteúdo:</strong> ${saeEscapeHtml(t.conteudo)}</p>
           <p><strong>Data de entrega:</strong> ${formatDate(t.dataEntrega)}</p>
           <p><strong>Lançamento:</strong> ${formatDate(t.dataLancamento)}</p>
         `
@@ -567,8 +575,40 @@
 
         document
           .getElementById('formEditarTarefa')
-          .addEventListener('submit', function (e) {
+          .addEventListener('submit', async function (e) {
             e.preventDefault()
+            if (window.saeBackendEnabled) {
+              const id = Number(document.getElementById('editTarId').value)
+              const task = tarefas.find((item) => Number(item.id) === id)
+              const subject = document.getElementById('editTarMateria').value.trim()
+              const description = document.getElementById('editTarConteudo').value.trim()
+              const dueDate = document.getElementById('editTarDataEntrega').value
+              const selectedClasses = getTurmasSelecionadas('editTurmasTarefa')
+              if (!task || !subject || !description || !dueDate || selectedClasses.length !== 1) {
+                showToast('Informe matéria, conteúdo, data e apenas a turma desta tarefa.', 'warning')
+                return
+              }
+              const classroom = window.saeTaskClasses?.find((item) => item.name === selectedClasses[0])
+              if (!classroom || Number(classroom.id) !== Number(task.classId)) {
+                showToast('A edição precisa manter a turma desta tarefa.', 'warning')
+                return
+              }
+              try {
+                await saeRequest(`/tasks/${id}`, {
+                  method: 'PUT',
+                  body: JSON.stringify({
+                    class_id: Number(classroom.id), subject,
+                    title: description.slice(0, 120), description, due_date: dueDate,
+                  }),
+                })
+                modalEditar.hide()
+                await window.saeProfessorUI?.refreshTasks?.()
+                showToast('Tarefa atualizada!', 'success')
+              } catch (error) {
+                showToast(error.message, 'danger')
+              }
+              return
+            }
             const id = parseInt(document.getElementById('editTarId').value)
             const materia = document
               .getElementById('editTarMateria')
@@ -608,6 +648,7 @@
 
         form.addEventListener('submit', function (e) {
           e.preventDefault()
+          if (window.saeBackendEnabled) return
           const materia = document.getElementById('tarMateria').value.trim()
           const turmas = getTurmasSelecionadas('turmasTarefa')
           const conteudo = document.getElementById('tarConteudo').value.trim()
@@ -651,6 +692,7 @@
           refresh() {
             render()
           },
+          refreshTasks: null,
         }
 
         document.addEventListener('DOMContentLoaded', function () {
@@ -672,7 +714,7 @@
     <script>
       ;(function () {
         'use strict'
-        if (!saeRequireLogin()) return
+        if (!saeRequireLogin('PROF')) return
         let classes = []
 
         async function loadTasks() {
@@ -680,8 +722,9 @@
             classes = ((await saeRequest('/classes')).items || []).filter(
               (item) => !item.status || item.status === 'ACTIVE',
             )
+            window.saeTaskClasses = classes
             saeDefinirTurmas(classes.map((item) => item.name))
-            const result = await saeRequest('/tasks?mine=1')
+            const result = await saeRequestAll('/tasks?mine=1')
             window.saeProfessorUI.setTasks(
               (result.items || []).map((task) => ({
                 id: task.id,
@@ -700,6 +743,8 @@
             showToast(error.message, 'danger')
           }
         }
+
+        window.saeProfessorUI.refreshTasks = loadTasks
 
         document.getElementById('formTarefa').addEventListener(
           'submit',
@@ -726,7 +771,7 @@
             )
               return
             try {
-              await Promise.all(
+              const results = await Promise.allSettled(
                 selected.map((item) =>
                   saeRequest('/tasks', {
                     method: 'POST',
@@ -742,10 +787,18 @@
                   }),
                 ),
               )
-              event.target.reset()
-              gerarSelectorTurmas('turmasTarefa')
+              const succeeded = results.filter((result) => result.status === 'fulfilled').length
               await loadTasks()
-              showToast('Tarefa cadastrada no SAE!', 'success')
+              if (succeeded) {
+                event.target.reset()
+                gerarSelectorTurmas('turmasTarefa')
+              }
+              const failed = results.find((result) => result.status === 'rejected')
+              if (failed) {
+                showToast(`${succeeded} tarefa(s) gravada(s); outra(s) falharam: ${failed.reason?.message || 'erro na API'}`, 'warning')
+              } else {
+                showToast('Tarefa cadastrada no SAE!', 'success')
+              }
             } catch (error) {
               showToast(error.message, 'danger')
             }
@@ -761,7 +814,7 @@
     <script>
       ;(function () {
         'use strict'
-        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin()) return
+        if (typeof saeRequireLogin !== 'function' || !saeRequireLogin('PROF')) return
 
         const table = document.getElementById('tabelaMensagens')
         const empty = document.getElementById('emptyMensagens')
@@ -795,20 +848,21 @@
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
+            timeZone: 'America/Cuiaba',
           })
         }
 
         // Tenta mapear o objeto vindo da API para { remetente, mensagem, hora }
         // independente do nome dos campos.
         function normalizar(item) {
+          const nome = item.sender_name || item.name || item.nome || ''
+          const telefone = item.sender_phone || item.phone || item.telefone || ''
+          const referencia = item.sender_ref || item.from_ref || item.sender ||
+            item.remetente || item.from || item.sender_id || item.contact || ''
           return {
-            remetente:
-              item.sender ||
-              item.remetente ||
-              item.from ||
-              item.sender_id ||
-              item.contact ||
-              '—',
+            remetente: nome
+              ? (telefone ? `${nome} (${telefone})` : nome)
+              : (telefone || referencia || '—'),
             mensagem:
               item.content ||
               item.message ||

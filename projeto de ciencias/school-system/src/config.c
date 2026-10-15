@@ -224,7 +224,24 @@ int config_load(AppConfig *out)
     copy_str(out->server_host, sizeof out->server_host, NULL, "127.0.0.1");
     out->server_port = parse_int_env("SERVER_PORT", 8080);
 
-    copy_str(out->database_path, sizeof out->database_path, getenv("DATABASE_PATH"), "data/school.db");
+    const char *database_path = getenv("DATABASE_PATH");
+    char previous_home_database[sizeof out->database_path] = {0};
+#if defined(_WIN32)
+    const char *database_home = getenv("USERPROFILE");
+    const char database_separator = '\\';
+#else
+    const char *database_home = getenv("HOME");
+    const char database_separator = '/';
+#endif
+    if (database_home && *database_home) {
+        int path_length = snprintf(previous_home_database, sizeof previous_home_database,
+                                   "%s%cschool.db", database_home, database_separator);
+        if (path_length >= 0 && (size_t)path_length < sizeof previous_home_database &&
+            database_path && strcmp(database_path, previous_home_database) == 0)
+            database_path = NULL;
+    }
+    copy_str(out->database_path, sizeof out->database_path,
+             database_path, "data/school.db");
     copy_str(out->web_root, sizeof out->web_root, getenv("WEB_ROOT"), "../../ScienceFair2026");
     copy_str(out->log_dir,        sizeof out->log_dir,        getenv("LOG_DIR"),        "logs");
     copy_str(out->log_level,      sizeof out->log_level,      getenv("LOG_LEVEL"),      "INFO");

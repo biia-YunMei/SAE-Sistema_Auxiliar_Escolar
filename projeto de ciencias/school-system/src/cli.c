@@ -1,3 +1,7 @@
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "cli.h"
 #include "error.h"
 #include "escola_api.h"
@@ -8,19 +12,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <errno.h>
 #include <locale.h>
+#include <ctype.h>
 
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <io.h>
+#include <fcntl.h>
+#include <conio.h>
 #include <windows.h>
 #define close_socket closesocket
 #else
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <termios.h>
 #include <unistd.h>
 #define close_socket close
 #endif
@@ -53,8 +63,8 @@ static void help_plain(void)
     puts("SAE — Sistema Auxiliar Escolar\n");
     puts("INÍCIO");
     puts("  sae servidor");
-    puts("  sae -ca -n NOME -p TELEFONE -s SENHA");
-    puts("  sae login -p TELEFONE -s SENHA | sae logout");
+    puts("  sae -ca -n NOME -p TELEFONE (senha solicitada sem eco)");
+    puts("  sae login -p TELEFONE | sae logout (senha solicitada sem eco)");
     puts("USUÁRIOS (COORD)");
     puts("  sae usuario criar|listar|editar|excluir");
     puts("  sae aluno vincular -u ID_ALUNO -c ID_TURMA");
@@ -77,15 +87,15 @@ static void help(void)
     puts("│                                                                                │");
     puts("├────────────────────────────────── INICIO ──────────────────────────────────────┤");
     puts("│     sae servidor                                  Inicia o servidor.           │");
-    puts("│     sae -ca -n NOME -p TELEFONE -s SENHA         Cria o 1º coordenador.        │");
-    puts("│     sae login -p TELEFONE -s SENHA               Entra no sistema.             │");
-    puts("│     sae logout                                   Encerra a sessão local.       │");
+    puts("│     sae -ca -n NOME -p TELEFONE                   Cria o 1º coordenador.       │");
+    puts("│     sae login -p TELEFONE                         Entra no sistema.            │");
+    puts("│     sae logout                                    Encerra a sessão local.      │");
     puts("│                                                                                │");
     puts("├ USUÁRIOS (somente COORD para criar, editar e excluir) ─────────────────────────┤");
-    puts("│     sae usuario criar -n NOME -p TELEFONE -t TIPO [-s SENHA]                   │");
+    puts("│     sae usuario criar -n NOME -p TELEFONE -t TIPO (senha solicitada)           │");
     puts("│          Tipos: COORD ou PROF. Aluno é cadastrado pela área da coordenação.    │");
     puts("│     sae usuario listar                                                         │");
-    puts("│     sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]                    │");
+    puts("│     sae usuario editar -u ID -n NOME -p TELEFONE [--senha]                     │");
     puts("│     sae usuario excluir -u ID                                                  │");
     puts("│     sae aluno vincular -u ID_ALUNO -c ID_TURMA                                 │");
     puts("│                                                                                │");
@@ -113,7 +123,7 @@ static void help(void)
     puts("│     sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM                             │");
     puts("│     Responde uma mensagem recebida; o ID tem formato m_...                     │");
     puts("│     sae whatsapp turma não está disponível: a API não oferece envio em massa.  │");
-    puts("│     Requer ESCOLA_API_KEY configurada no ambiente local.                       │");
+    puts("│                                                                                │");
     puts("│                                                                                │");
     puts("├────────────────── API ESCOLAR (whoami, inbox, reply e ref) ────────────────────┤");
     puts("│     sae escola whoami                                                          │");
@@ -122,7 +132,7 @@ static void help(void)
     puts("│     sae escola tutor -i ID -c ID_TURMA -m PERGUNTA                             │");
     puts("│          IA tutora consulta tarefas da turma e responde ao ID da inbox.        │");
     puts("│     sae escola ref                                                             │");
-    puts("│     Requer ESCOLA_API_KEY, AI_API_KEY e login SAE; chaves ficam no .env.       │");
+    puts("│                                                                                │");
     puts("│                                                                                │");
     puts("├─────────────────────────────── OPÇÕES ─────────────────────────────────────────┤");
     puts("│                                                                                │");
@@ -139,31 +149,157 @@ static const char *opt(int argc, char **argv, const char *key)
     return NULL;
 }
 
+static int has_flag(int argc, char **argv, const char *flag)
+{
+    for (int i = 1; i < argc; ++i)
+        if (strcmp(argv[i], flag) == 0) return 1;
+    return 0;
+}
+
 static int json_text(const char *s, char *out, size_t cap)
 {
     size_t j = 0;
     if (!s) s = "";
     for (size_t i = 0; s[i]; i++) {
-        if (s[i] == '"' || s[i] == '\\' || s[i] == '\n' || s[i] == '\r') return 0;
+        if (s[i] == '"' || s[i] == '\\' || (unsigned char)s[i] < 0x20) return 0;
         if (j + 1 >= cap) return 0;
         out[j++] = s[i];
     }
     out[j] = '\0'; return 1;
 }
 
+static int prompt_password(const char *prompt, char *out, size_t cap)
+{
+    if (!out || cap < 2) return 0;
+    out[0] = '\0';
+#if defined(_WIN32)
+    fputs(prompt, stderr); fflush(stderr);
+    size_t used = 0;
+    for (;;) {
+        int ch = _getch();
+        if (ch == '\r' || ch == '\n') break;
+        if (ch == 3 || ch == EOF) { memset(out, 0, cap); return 0; }
+        if (ch == '\b') { if (used) --used; continue; }
+        if (ch < 0x20 || used + 1 >= cap) { memset(out, 0, cap); return 0; }
+        out[used++] = (char)ch;
+    }
+    out[used] = '\0';
+    fputc('\n', stderr);
+    return used > 0;
+#else
+    if (!isatty(STDIN_FILENO)) return 0;
+    struct termios original, hidden;
+    if (tcgetattr(STDIN_FILENO, &original) != 0) return 0;
+    hidden = original;
+    hidden.c_lflag &= (tcflag_t)~ECHO;
+    fputs(prompt, stderr); fflush(stderr);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &hidden) != 0) return 0;
+    char *result = fgets(out, (int)cap, stdin);
+    int too_long = 0;
+    if (result && !strchr(out, '\n')) {
+        int trailing = fgetc(stdin);
+        if (trailing != '\n' && trailing != EOF) {
+            too_long = 1;
+            while (trailing != '\n' && trailing != EOF) trailing = fgetc(stdin);
+        }
+    }
+    int restore_ok = tcsetattr(STDIN_FILENO, TCSAFLUSH, &original) == 0;
+    fputc('\n', stderr);
+    if (!result || !restore_ok || too_long) {
+        memset(out, 0, cap);
+        return 0;
+    }
+    out[strcspn(out, "\r\n")] = '\0';
+    return out[0] != '\0';
+#endif
+}
+
+static void clear_secret(char *secret, size_t cap)
+{
+    volatile char *p = (volatile char *)secret;
+    while (cap--) *p++ = '\0';
+}
+
 static int token_load(char *token, size_t cap)
 {
+    if (!token || cap < 65) return 0;
+    token[0] = '\0';
 #if defined(_WIN32)
-    (void)_chmod(SESSION_FILE, _S_IREAD | _S_IWRITE);
+    HANDLE handle = CreateFileA(SESSION_FILE, GENERIC_READ, FILE_SHARE_READ,
+        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return 0;
+    BY_HANDLE_FILE_INFORMATION info;
+    if (!GetFileInformationByHandle(handle, &info) ||
+        (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))) {
+        CloseHandle(handle);
+        return 0;
+    }
+    int fd = _open_osfhandle((intptr_t)handle, _O_RDONLY | _O_BINARY);
+    if (fd < 0) { CloseHandle(handle); return 0; }
+    FILE *f = _fdopen(fd, "rb");
+    if (!f) { _close(fd); return 0; }
 #else
-    (void)chmod(SESSION_FILE, 0600);
+    int fd = open(SESSION_FILE, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return 0;
+    struct stat file_stat;
+    if (fstat(fd, &file_stat) != 0 || !S_ISREG(file_stat.st_mode) ||
+        file_stat.st_uid != geteuid() || fchmod(fd, 0600) != 0) {
+        close(fd);
+        return 0;
+    }
+    FILE *f = fdopen(fd, "r");
+    if (!f) { close(fd); return 0; }
 #endif
-    FILE *f = fopen(SESSION_FILE, "r");
     if (!f) return 0;
     int ok = fgets(token, (int)cap, f) != NULL;
+    int trailing = fgetc(f);
+    if (trailing != EOF || ferror(f)) ok = 0;
     fclose(f);
     token[strcspn(token, "\r\n")] = '\0';
-    return ok && token[0];
+    if (!ok || strlen(token) != 64) return 0;
+    for (size_t i = 0; i < 64; ++i)
+        if (!isxdigit((unsigned char)token[i])) return 0;
+    return 1;
+}
+
+static int token_save_secure(const char *token)
+{
+    if (!token || strlen(token) != 64) return 0;
+    for (size_t i = 0; i < 64; ++i)
+        if (!isxdigit((unsigned char)token[i])) return 0;
+#if defined(_WIN32)
+    char temporary[MAX_PATH];
+    int n = snprintf(temporary, sizeof temporary, ".sae-session.tmp.%lu",
+                     (unsigned long)GetCurrentProcessId());
+    if (n < 0 || (size_t)n >= sizeof temporary) return 0;
+    HANDLE handle = CreateFileA(temporary, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                                FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return 0;
+    char line[66];
+    memcpy(line, token, 64); line[64] = '\n'; line[65] = '\0';
+    DWORD written = 0;
+    int ok = WriteFile(handle, line, 65, &written, NULL) && written == 65 &&
+             FlushFileBuffers(handle);
+    if (!CloseHandle(handle)) ok = 0;
+    if (ok && MoveFileExA(temporary, SESSION_FILE,
+                          MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        return 1;
+    (void)DeleteFileA(temporary);
+    return 0;
+#else
+    char temporary[96];
+    int n = snprintf(temporary, sizeof temporary, ".sae-session.tmp.%ld", (long)getpid());
+    if (n < 0 || (size_t)n >= sizeof temporary) return 0;
+    int fd = open(temporary, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0) return 0;
+    FILE *file = fdopen(fd, "w");
+    if (!file) { close(fd); (void)unlink(temporary); return 0; }
+    int ok = fprintf(file, "%s\n", token) > 0 && fflush(file) == 0 && fsync(fd) == 0;
+    if (fclose(file) != 0) ok = 0;
+    if (ok && rename(temporary, SESSION_FILE) == 0) return 1;
+    (void)unlink(temporary);
+    return 0;
+#endif
 }
 
 static int request(const char *method, const char *path, const char *body, char *response, size_t cap)
@@ -511,7 +647,7 @@ static int call(const char *method, const char *path, const char *body)
     char response[65536];
     char token[80];
     if (!path_is_public(path) && !token_load(token, sizeof token)) {
-        puts("Você precisa fazer login antes de executar este comando. Use: sae login -p TELEFONE -s SENHA");
+        puts("Você precisa fazer login antes. Use sae login -p TELEFONE; a senha será solicitada sem eco.");
         return ERROR_UNAUTHORIZED;
     }
     if (!request(method, path, body, response, sizeof response)) {
@@ -604,25 +740,63 @@ int cli_run(int argc, char **argv)
     const char *n = opt(argc, argv, "-n"), *p = opt(argc, argv, "-p"), *s = opt(argc, argv, "-s");
     const char *t = opt(argc, argv, "-t"), *c = opt(argc, argv, "-c"), *u = opt(argc, argv, "-u");
     const char *m = opt(argc, argv, "-m"), *v = opt(argc, argv, "-v"), *d = opt(argc, argv, "-d"), *g = opt(argc, argv, "-g"), *i = opt(argc, argv, "-i");
-    char a[128], b[128], secret[128], q[8192];
-    if ((strcmp(argv[1], "-ca") == 0 || strcmp(argv[1], "--create-admin") == 0) && n && p && s) {
+    char a[128] = {0}, b[128] = {0}, secret[128] = {0}, q[8192] = {0};
+    if ((strcmp(argv[1], "-ca") == 0 || strcmp(argv[1], "--create-admin") == 0) && n && p) {
+        if (s) {
+            fprintf(stderr, "Por segurança, não passe senha como argumento. Omita -s para digitá-la sem eco.\n");
+            return ERROR_INVALID_INPUT;
+        }
         const char *setup_key = getenv("SAE_BOOTSTRAP_KEY");
-        char key_json[256];
+        char key_json[256], password_json[128];
         if (!setup_key || !*setup_key) {
             fprintf(stderr, "Defina SAE_BOOTSTRAP_KEY no ambiente para criar o primeiro administrador.\n");
             return ERROR_CONFIG;
         }
-        if (!json_text(n,a,sizeof a)||!json_text(p,b,sizeof b)||!json_text(s,secret,sizeof secret)||
-            !json_text(setup_key,key_json,sizeof key_json)) return ERROR_INVALID_INPUT;
-        snprintf(q,sizeof q,"{\"name\":\"%s\",\"phone\":\"%s\",\"password\":\"%s\",\"bootstrap_key\":\"%s\"}",a,b,secret,key_json);
-        return call("POST","/api/bootstrap",q);
+        if (!prompt_password("Senha do administrador: ", secret, sizeof secret))
+            return ERROR_INVALID_INPUT;
+        if (!json_text(n,a,sizeof a)||!json_text(p,b,sizeof b)||
+            !json_text(secret,password_json,sizeof password_json)||
+            !json_text(setup_key,key_json,sizeof key_json)) {
+            clear_secret(secret, sizeof secret);
+            return ERROR_INVALID_INPUT;
+        }
+        snprintf(q,sizeof q,"{\"name\":\"%s\",\"phone\":\"%s\",\"password\":\"%s\",\"bootstrap_key\":\"%s\"}",a,b,password_json,key_json);
+        clear_secret(secret, sizeof secret);
+        clear_secret(password_json, sizeof password_json);
+        int rc = call("POST","/api/bootstrap",q);
+        clear_secret(q, sizeof q);
+        clear_secret(key_json, sizeof key_json);
+        return rc;
     }
-    if (!strcmp(argv[1], "login") && p && s) {
-        if (!json_text(p,a,sizeof a)||!json_text(s,b,sizeof b)) return ERROR_INVALID_INPUT;
+    if (!strcmp(argv[1], "login") && p) {
+        if (s) {
+            fprintf(stderr, "Por segurança, não passe senha como argumento. Omita -s para digitá-la sem eco.\n");
+            return ERROR_INVALID_INPUT;
+        }
+        if (!prompt_password("Senha: ", secret, sizeof secret)) return ERROR_INVALID_INPUT;
+        if (!json_text(p,a,sizeof a)||!json_text(secret,b,sizeof b)) {
+            clear_secret(secret, sizeof secret);
+            return ERROR_INVALID_INPUT;
+        }
+        clear_secret(secret, sizeof secret);
         snprintf(q,sizeof q,"{\"phone\":\"%s\",\"password\":\"%s\"}",a,b);
-        char r[4096]; if (!request("POST","/api/auth",q,r,sizeof r)) return ERROR_NETWORK;
-        char *x=strstr(r,"\"token\":\""); if (!x) { print_response(r); return ERROR_UNAUTHORIZED; }
-        x += 9; char *end=strchr(x,'"'); if (!end) return ERROR_HTTP; *end='\0'; FILE *f=fopen(SESSION_FILE,"w"); if (!f) return ERROR_INTERNAL; fprintf(f,"%s\n",x); fclose(f); print_success("Login realizado. Sessão salva neste computador."); return SUCCESS;
+        char r[4096] = {0};
+        if (!request("POST","/api/auth",q,r,sizeof r)) {
+            clear_secret(b, sizeof b); clear_secret(q, sizeof q);
+            return ERROR_NETWORK;
+        }
+        clear_secret(b, sizeof b); clear_secret(q, sizeof q);
+        char *x=strstr(r,"\"token\":\"");
+        if (!x) { print_response(r); clear_secret(r, sizeof r); return ERROR_UNAUTHORIZED; }
+        x += 9;
+        char *end = strchr(x, '"');
+        if (!end) { clear_secret(r, sizeof r); return ERROR_HTTP; }
+        *end = '\0';
+        int saved = token_save_secure(x);
+        clear_secret(r, sizeof r);
+        if (!saved) return ERROR_INTERNAL;
+        print_success("Login realizado. Sessão salva neste computador.");
+        return SUCCESS;
     }
     if (!strcmp(argv[1], "logout")) {
         char response[4096];
@@ -644,11 +818,48 @@ int cli_run(int argc, char **argv)
         return SUCCESS;
     }
     if (!strcmp(argv[1], "usuario") && argc > 2 && !strcmp(argv[2], "listar")) return call("GET","/api/users","");
-    if (!strcmp(argv[1], "usuario") && argc > 2 && !strcmp(argv[2], "criar") && n && p && t) { snprintf(q,sizeof q,"{\"name\":\"%s\",\"phone\":\"%s\",\"type\":\"%s\",\"password\":\"%s\"}",n,p,t,s?s:""); return call("POST","/api/users",q); }
+    if (!strcmp(argv[1], "usuario") && argc > 2 && !strcmp(argv[2], "criar") && n && p && t) {
+        char type_json[16], password_json[128];
+        if (s) {
+            fprintf(stderr, "Por segurança, não passe senha como argumento. A senha será solicitada sem eco.\n");
+            return ERROR_INVALID_INPUT;
+        }
+        if (!prompt_password("Senha do usuário: ", secret, sizeof secret)) return ERROR_INVALID_INPUT;
+        if (!json_text(n, a, sizeof a) || !json_text(p, b, sizeof b) ||
+            !json_text(t, type_json, sizeof type_json) ||
+            !json_text(secret, password_json, sizeof password_json)) {
+            clear_secret(secret, sizeof secret);
+            return ERROR_INVALID_INPUT;
+        }
+        clear_secret(secret, sizeof secret);
+        snprintf(q, sizeof q, "{\"name\":\"%s\",\"phone\":\"%s\",\"type\":\"%s\",\"password\":\"%s\"}", a, b, type_json, password_json);
+        clear_secret(password_json, sizeof password_json);
+        int rc = call("POST", "/api/users", q);
+        clear_secret(q, sizeof q);
+        return rc;
+    }
     if (!strcmp(argv[1], "usuario") && argc > 2 && !strcmp(argv[2], "editar") && u && n && p) {
+        if (s) {
+            fprintf(stderr, "Por segurança, não passe senha como argumento; use a tela de coordenação para redefini-la.\n");
+            return ERROR_INVALID_INPUT;
+        }
+        char name_json[128], phone_json[32], password_json[128] = "";
+        if (has_flag(argc, argv, "--senha") &&
+            !prompt_password("Nova senha do usuário: ", secret, sizeof secret))
+            return ERROR_INVALID_INPUT;
+        if (!json_text(n, name_json, sizeof name_json) ||
+            !json_text(p, phone_json, sizeof phone_json) ||
+            (secret[0] && !json_text(secret, password_json, sizeof password_json))) {
+            clear_secret(secret, sizeof secret);
+            return ERROR_INVALID_INPUT;
+        }
         snprintf(a, sizeof a, "/api/users/%s", u);
-        snprintf(q, sizeof q, "{\"name\":\"%s\",\"phone\":\"%s\",\"password\":\"%s\"}", n, p, s ? s : "");
-        return call("PUT", a, q);
+        snprintf(q, sizeof q, "{\"name\":\"%s\",\"phone\":\"%s\",\"password\":\"%s\"}", name_json, phone_json, password_json);
+        clear_secret(secret, sizeof secret);
+        clear_secret(password_json, sizeof password_json);
+        int rc = call("PUT", a, q);
+        clear_secret(q, sizeof q);
+        return rc;
     }
     if (!strcmp(argv[1], "usuario") && argc > 2 && !strcmp(argv[2], "excluir") && u) {
         snprintf(a, sizeof a, "/api/users/%s", u);

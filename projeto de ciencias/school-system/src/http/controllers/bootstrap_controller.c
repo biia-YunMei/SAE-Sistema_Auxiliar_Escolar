@@ -33,9 +33,14 @@ int ctrl_bootstrap_status(const HttpRequest *req, HttpResponse *res)
         return http_respond_error(res, 500, "could not verify initial setup");
     if (exists && config_clear_bootstrap_key() != SUCCESS)
         log_warn("bootstrap: não foi possível remover a chave do arquivo .env");
-    return http_respond_json(res, 200, exists
-        ? "{\"available\":false}"
-        : "{\"available\":true}");
+    if (exists)
+        return http_respond_json(res, 200,
+            "{\"available\":false,\"reason\":\"user_exists\"}");
+    const char *key = getenv("SAE_BOOTSTRAP_KEY");
+    if (!key || strlen(key) < 32)
+        return http_respond_json(res, 200,
+            "{\"available\":false,\"reason\":\"bootstrap_disabled\"}");
+    return http_respond_json(res, 200, "{\"available\":true}");
 }
 
 static int field(const char *body, const char *key, char *out, size_t cap)

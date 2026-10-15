@@ -38,7 +38,7 @@ projeto. O `.env` não deve ser enviado ao Git.
 | `SERVER_HOST` | `0.0.0.0` | Endereço do servidor HTTP. |
 | `SERVER_PORT` | `8080` | Porta HTTP. |
 | `WEB_ROOT` | `../../ScienceFair2026` | Diretório das páginas estáticas. Relativo à pasta de execução do servidor. |
-| `DATABASE_PATH` | `data/school.db` | Arquivo SQLite. |
+| `DATABASE_PATH` | `data/school.db` | Arquivo SQLite principal, relativo à pasta em que o servidor é iniciado. O antigo `$HOME/school.db` é redirecionado para esse caminho. |
 | `LOG_DIR` | `logs` | Diretório de logs. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARN` ou `ERROR`. |
 | `SESSION_TIMEOUT_MIN` | `60` | Duração da sessão em minutos. |
@@ -46,7 +46,7 @@ projeto. O `.env` não deve ser enviado ao Git.
 | `AI_API_URL` | Gemini API | Base URL da API de geração do Gemini. |
 | `AI_API_KEY` | vazio | Chave privada do Gemini; somente no ambiente local do back-end. |
 | `AI_MODEL` | `gemini-3.8-flash` | Modelo de IA usado. |
-| `AI_INSTRUCTIONS_FILE` | busca automática | Caminho opcional para o Markdown com instruções pedagógicas da IA. O arquivo é lido a cada resposta e limitado a 3500 bytes. |
+| `AI_INSTRUCTIONS_FILE` | busca automática | Caminho opcional para o Markdown com instruções pedagógicas da IA. O arquivo é lido a cada resposta e limitado a 6000 bytes. |
 | `ESCOLA_API_KEY` | vazio | Chave da API escolar para consultar inbox e responder mensagens. |
 | `ESCOLA_CURSOR_PATH` | `data/escola_api.cursor` | Cursor local de mensagens já consultadas. |
 | `SAE_BOOTSTRAP_KEY` | vazio | Chave temporária para o primeiro cadastro; mínimo 32 caracteres. O SAE remove a atribuição do `.env` após criar o primeiro usuário ou ao detectar usuários existentes. |
@@ -70,7 +70,7 @@ SAE_BOOTSTRAP_KEY=
 ### Ativar a integração de IA
 
 Copie `.env.example` para `.env` e preencha `AI_API_KEY` e `ESCOLA_API_KEY` localmente.
-O projeto usa Gemini para dúvidas por texto. O arquivo `instruções/AIconfig.md` é carregado como orientação pedagógica; na ausência de `AI_INSTRUCTIONS_FILE`, o SAE procura esse arquivo nos caminhos relativos conhecidos. O conteúdo é limitado a 3500 bytes e lido a cada resposta. Se não for encontrado, as regras pedagógicas embutidas continuam ativas. O worker consulta a API escolar e responde
+O projeto usa Gemini para dúvidas por texto. O arquivo `instruções/AIconfig.md` é carregado como orientação pedagógica; na ausência de `AI_INSTRUCTIONS_FILE`, o SAE procura esse arquivo nos caminhos relativos conhecidos. O conteúdo é limitado a 6000 bytes e lido a cada resposta. O log informa o caminho e o tamanho do arquivo carregado. Se não for encontrado, as regras pedagógicas embutidas continuam ativas. O worker consulta a API escolar e responde
 por ela; não requer webhook, túnel ou credenciais da Meta. Com libcurl disponível,
 `make` inclui o cliente remoto. Sem chave ou libcurl, as respostas de IA ficam indisponíveis.
 O servidor nunca envia essas chaves ao navegador.

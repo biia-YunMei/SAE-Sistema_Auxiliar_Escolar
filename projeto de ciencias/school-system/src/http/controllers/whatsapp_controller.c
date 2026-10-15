@@ -13,6 +13,7 @@
 #include "logger.h"
 #include "config.h"
 #include "whatsapp.h"
+#include "anonymous_enrollment.h"
 #include "controllers.h"
 #include "json_util.h"
 
@@ -434,6 +435,32 @@ int ctrl_whatsapp_send(const HttpRequest *req, HttpResponse *res)
     return http_respond_json(res, 200, "{\"status\":\"sent\"}");
 }
 
+/* Pair an authenticated teacher account to the stable anonymous sender ref
+ * used by the school inbox. The code is single-use, short-lived and returned
+ * only to the authenticated teacher that requested it. */
+int ctrl_whatsapp_teacher_link_code(const HttpRequest *req, HttpResponse *res)
+{
+    if (strcmp(req->method, "POST") != 0)
+        return http_respond_error(res, 405, "method not allowed");
+    AuthSession session;
+    if (!req->auth || auth_session_resolve(req->auth, &session) != SUCCESS)
+        return http_respond_error(res, 401, "invalid session");
+    if (session.type != USER_TYPE_PROF)
+        return http_respond_error(res, 403, "teacher only");
+    char code[17];
+    int rc = anonymous_teacher_link_create(session.user_id, code);
+    if (rc == ERROR_CONFIG)
+        return http_respond_error(res, 503, "secure code generation unavailable");
+    if (rc == ERROR_FORBIDDEN)
+        return http_respond_error(res, 403, "active teacher account required");
+    if (rc != SUCCESS)
+        return http_respond_error(res, 500, "could not create link code");
+    char response[128];
+    (void)snprintf(response, sizeof response,
+        "{\"code\":\"%s\",\"expires_in_minutes\":10}", code);
+    return http_respond_json(res, 201, response);
+}
+
 /* Envio individual para estudantes matriculados na turma. Professores só
  * podem enviar para turmas às quais estão vinculados; coordenação pode todas. */
 int ctrl_whatsapp_notify_class(const HttpRequest *req, HttpResponse *res)
@@ -515,5 +542,5 @@ int ctrl_health(const HttpRequest *req, HttpResponse *res)
     sqlite3_finalize(statement);
     if (!ready) return http_respond_error(res, 503, "database unavailable");
     return http_respond_json(res, 200,
-        "{\"status\":\"ready\",\"checks\":{\"database\":true}}");
+        "{\"status\":\"ok\",\"ready\":true,\"checks\":{\"database\":true}}");
 }

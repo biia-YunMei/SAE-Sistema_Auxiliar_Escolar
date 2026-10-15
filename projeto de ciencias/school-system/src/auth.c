@@ -294,3 +294,14 @@ int auth_session_revoke(const char *token)
     pthread_mutex_unlock(&g_auth_mutex);
     return result;
 }
+
+void auth_session_revoke_user(int64_t user_id)
+{
+    if (user_id <= 0) return;
+    pthread_mutex_lock(&g_auth_mutex);
+    for (int i = 0; i < AUTH_MAX_SESSIONS; ++i) {
+        if (g_sessions[i].used && g_sessions[i].session.user_id == user_id)
+            memset(&g_sessions[i], 0, sizeof g_sessions[i]);
+    }
+    pthread_mutex_unlock(&g_auth_mutex);
+}

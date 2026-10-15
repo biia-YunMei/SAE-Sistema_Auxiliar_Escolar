@@ -11,9 +11,12 @@ sae servidor
 Em outro terminal, crie o primeiro coordenador e entre no sistema:
 
 ```bash
-sae -ca -n "Nome do coordenador" -p +5566999999999 -s sua_senha
-sae login -p +5566999999999 -s sua_senha
+sae -ca -n "Nome do coordenador" -p +5566999999999
+sae login -p +5566999999999
 ```
+
+O terminal solicita a senha sem exibi-la. Não informe a senha como argumento,
+pois ela pode ficar no histórico do shell e visível na lista de processos.
 
 O primeiro cadastro é público apenas enquanto não há coordenador. Depois disso,
 as operações exigem uma sessão válida. A sessão local fica em `.sae-session` e
@@ -37,9 +40,9 @@ Todos os papéis podem usar `sae logout` e `sae --help`.
 
 ```bash
 # Usuários (COORD)
-sae usuario criar -n NOME -p TELEFONE -t COORD|PROF [-s SENHA]
+sae usuario criar -n NOME -p TELEFONE -t COORD|PROF
 sae usuario listar
-sae usuario editar -u ID -n NOME -p TELEFONE [-s SENHA]
+sae usuario editar -u ID -n NOME -p TELEFONE [--senha]
 sae usuario excluir -u ID
 
 # Turmas (COORD e PROF)

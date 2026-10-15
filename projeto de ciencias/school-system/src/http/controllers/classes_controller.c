@@ -229,14 +229,20 @@ int ctrl_classes_add_teacher(const HttpRequest *req, HttpResponse *res, const ch
         if (db_prepare("SELECT id FROM teachers WHERE user_id=?;", &statement) != SUCCESS)
             return http_respond_error(res, 500, "database error");
         db_bind_int64(statement, 1, teacher_user_id);
-        if (sqlite3_step(statement) == SQLITE_ROW)
+        int step = sqlite3_step(statement);
+        if (step == SQLITE_ROW) {
             teacher_id = sqlite3_column_int64(statement, 0);
-        else
-            teacher_id = -1;
+        }
         sqlite3_finalize(statement);
+        if (step == SQLITE_DONE)
+            return http_respond_error(res, 404, "teacher user not found");
+        if (step != SQLITE_ROW)
+            return http_respond_error(res, 500, "database error");
     }
-    if (class_id <= 0 || teacher_id <= 0)
-        return http_respond_error(res, 400, "ids required");
+    if (class_id <= 0)
+        return http_respond_error(res, 400, "invalid class id");
+    if (teacher_id <= 0)
+        return http_respond_error(res, 400, "teacher id required");
     if (classes_link_teacher(teacher_id, class_id) != SUCCESS)
         return http_respond_error(res, 400, "link failed");
     return http_respond_json(res, 200, "{\"ok\":true}");

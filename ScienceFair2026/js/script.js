@@ -49,6 +49,13 @@
     })
 })()
 
+// ─── ESCAPE HTML PARA DADOS DA API ───
+function saeEscapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char])
+}
+
 // ─── TOAST ───
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer')
@@ -74,7 +81,7 @@ function showToast(message, type = 'success') {
       <div class="d-flex">
         <div class="toast-body">
           <i class="bi ${icon}"></i>
-          ${message}
+          ${saeEscapeHtml(message)}
         </div>
         <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button>
       </div>

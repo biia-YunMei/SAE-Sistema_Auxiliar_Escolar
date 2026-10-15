@@ -7,6 +7,7 @@
 #include "database.h"
 #include "users.h"
 #include "classes.h"
+#include "anonymous_enrollment.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -63,6 +64,40 @@ int main(void)
     CHECK(classes_link_teacher(teacher_id, class_9a.id) == SUCCESS);
     Class class_9b;
     CHECK(classes_create("9B", "9º ano", SHIFT_MORNING, &class_9b) == SUCCESS);
+
+    /* Vínculo anônimo de professor: código de uso único, turma autorizada,
+     * confirmação antes de gravar e recado protegido pelo mesmo vínculo. */
+    char teacher_code[17] = {0}, link_message[40] = {0};
+    const char *teacher_ref = "snd_teacher_01";
+    int teacher_link_rc = anonymous_teacher_link_create(teacher.id, teacher_code);
+    CHECK(teacher_link_rc == SUCCESS || teacher_link_rc == ERROR_CONFIG);
+    if (teacher_link_rc == SUCCESS) {
+        snprintf(link_message, sizeof link_message, "VINCULAR %s", teacher_code);
+        CHECK(whatsapp_receive_anonymous_message(teacher_ref, link_message, reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "WhatsApp vinculado") != NULL);
+        int64_t linked_user_id = 0;
+        CHECK(anonymous_teacher_link_user(teacher_ref, &linked_user_id) == SUCCESS && linked_user_id == teacher.id);
+        CHECK(whatsapp_receive_anonymous_message("snd_attacker_01", link_message, reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "Código inválido") != NULL);
+        CHECK(whatsapp_receive_anonymous_message(teacher_ref,
+              "9A matematica pagina 77 entrega sexta", reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "Resumo:") != NULL);
+        CHECK(whatsapp_receive_anonymous_message(teacher_ref, "SIM", reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "Tarefa publicada") != NULL);
+        CHECK(whatsapp_receive_anonymous_message(teacher_ref,
+              "9B matematica pagina 78 entrega sexta", reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "nao esta autorizado") != NULL);
+        CHECK(whatsapp_receive_anonymous_message(teacher_ref,
+              "RECADO 9A: reunião de responsáveis amanhã", reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "Prévia do recado") != NULL);
+        CHECK(whatsapp_receive_anonymous_message(teacher_ref, "SIM", reply, sizeof reply) == SUCCESS);
+        CHECK(strstr(reply, "Recado publicado") != NULL);
+        CHECK(db_prepare("SELECT count(*) FROM notices WHERE author_id=? AND class_id=? AND content=?;", &statement) == SUCCESS);
+        db_bind_int64(statement, 1, teacher.id); db_bind_int64(statement, 2, class_9a.id);
+        db_bind_text(statement, 3, "reunião de responsáveis amanhã");
+        CHECK(sqlite3_step(statement) == SQLITE_ROW && sqlite3_column_int(statement, 0) == 1);
+        sqlite3_finalize(statement);
+    }
     CHECK(whatsapp_receive_message(teacher.phone,
           "9B matematica pagina 2 entrega sexta", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "nao esta autorizado") != NULL);
@@ -116,9 +151,11 @@ int main(void)
           reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "De qual turma") != NULL);
     CHECK(whatsapp_receive_anonymous_message(from_ref, "9A", reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "Turma registrada: 9A") != NULL);
     CHECK(strstr(reply, "Tarefas de 9A") != NULL);
-    CHECK(whatsapp_receive_anonymous_message(from_ref, "avisos", reply, sizeof reply) == SUCCESS);
+    CHECK(whatsapp_receive_anonymous_message(from_ref, "tarefas da turma 9B", reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "Turma vinculada: 9A") == NULL);
+    CHECK(strstr(reply, "Tarefas de 9B") != NULL);
+    CHECK(whatsapp_receive_anonymous_message(from_ref, "avisos da turma 9A", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "Prova de Portugues") != NULL);
     CHECK(strstr(reply, "Comunicado futuro") == NULL);
     CHECK(whatsapp_store_anonymous_inbox_message("m_test_01", from_ref, "oi", "text") == SUCCESS);
@@ -129,13 +166,17 @@ int main(void)
     CHECK(whatsapp_mark_anonymous_inbox_message("m_test_01", "PROCESSED") == SUCCESS);
     CHECK(whatsapp_receive_anonymous_message("snd_test_02", "Quais avisos?", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "De qual turma") != NULL);
-    CHECK(whatsapp_receive_anonymous_message("snd_test_02", "99Z", reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "Nao encontrei uma turma ativa") != NULL);
+    CHECK(whatsapp_receive_anonymous_message("snd_test_02", "CÓDIGO 0000000000000000",
+          reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "código à coordenação") == NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_02", "cancelar", reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "cancelada") != NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_03", "Quais deveres tenho?",
           reply, sizeof reply) == SUCCESS);
     CHECK(strstr(reply, "De qual turma") != NULL);
+    CHECK(whatsapp_receive_anonymous_message("snd_test_03", "cancelar",
+          reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "cancelada") != NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_03",
           "Quem foi Mendel e como ele ajudou nos estudos de genética?",
           reply, sizeof reply) == SUCCESS);
@@ -143,18 +184,18 @@ int main(void)
     CHECK(strstr(reply, "Vamos por etapas") != NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_03", "9º ano",
           reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "mais de uma turma") != NULL);
-    CHECK(strstr(reply, "9A") != NULL && strstr(reply, "9B") != NULL);
+    CHECK(strstr(reply, "Turma vinculada") == NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_03", "sou do nono A",
           reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "Turma registrada: 9A") != NULL);
+    CHECK(strstr(reply, "Turma vinculada") == NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_04", "Quais avisos?",
           reply, sizeof reply) == SUCCESS);
+    CHECK(strstr(reply, "De qual turma") != NULL);
     char class_id_reference[32];
     snprintf(class_id_reference, sizeof class_id_reference, "ID %lld", (long long)class_9b.id);
     CHECK(whatsapp_receive_anonymous_message("snd_test_04", class_id_reference,
           reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "Turma registrada: 9B") != NULL);
+    CHECK(strstr(reply, "Turma vinculada") == NULL);
     CHECK(whatsapp_receive_anonymous_message("invalid ref", "oi", reply, sizeof reply) == ERROR_INVALID_INPUT);
     CHECK(whatsapp_receive_message("+5511999990003", "8B matematica pagina 2 entrega sexta",
           reply, sizeof reply) == SUCCESS);
@@ -168,7 +209,7 @@ int main(void)
     CHECK(strstr(reply, "Tarefas de 9A") != NULL);
     CHECK(whatsapp_receive_anonymous_message("snd_test_06",
           "tarefas da turma 2", reply, sizeof reply) == SUCCESS);
-    CHECK(strstr(reply, "Essa turma ainda não está cadastrada") != NULL);
+    CHECK(strstr(reply, "código à coordenação") == NULL);
     char school_context[1500];
     whatsapp_build_school_context(school_context, sizeof school_context);
     CHECK(strstr(school_context, "9A") != NULL);

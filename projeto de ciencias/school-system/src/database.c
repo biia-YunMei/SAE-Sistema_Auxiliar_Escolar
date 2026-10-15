@@ -325,6 +325,24 @@ static int run_migrations(void)
         },
         { 24,
           "ALTER TABLE anonymous_students ADD COLUMN class_verified INTEGER NOT NULL DEFAULT 0 CHECK(class_verified IN (0,1));"
+        },
+        { 25,
+          "CREATE TABLE IF NOT EXISTS whatsapp_teacher_link_codes ("
+          " code_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL,"
+          " claimed_by TEXT, claimed_at TEXT,"
+          " FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+          ");"
+          "CREATE INDEX IF NOT EXISTS idx_teacher_link_codes_expiry ON whatsapp_teacher_link_codes(expires_at,claimed_at);"
+          "CREATE TABLE IF NOT EXISTS whatsapp_teacher_links ("
+          " from_ref TEXT PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, linked_at TEXT NOT NULL DEFAULT(datetime('now')) ,"
+          " FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE"
+          ");"
+          "CREATE TABLE IF NOT EXISTS pending_teacher_notices ("
+          " from_ref TEXT PRIMARY KEY, user_id INTEGER NOT NULL, class_id INTEGER NOT NULL,"
+          " title TEXT NOT NULL, content TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT(datetime('now')) ,"
+          " FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE"
+          ");"
         }
     };
 

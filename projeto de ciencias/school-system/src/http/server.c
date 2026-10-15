@@ -73,6 +73,7 @@ static const char *friendly_error_message(const char *message)
         { "id required", "Informe a identificação do item." },
         { "id too long", "A identificação informada é muito longa." },
         { "ids required", "Informe as identificações necessárias." },
+        { "teacher user not found", "O usuário informado não tem um cadastro de professor ativo." },
         { "invalid credentials", "Telefone ou senha incorretos. Confira os dados e tente novamente." },
         { "invalid password length", "A senha deve ter entre 8 e 127 caracteres." },
         { "invalid setup key", "A chave temporária de configuração está incorreta." },
@@ -167,8 +168,27 @@ int http_respond_error(HttpResponse *res, int code, const char *msg)
 {
     if (!res) return ERROR_INVALID_INPUT;
     msg = friendly_error_message(msg);
+    char escaped[sizeof res->body_storage];
+    size_t used = 0;
+    static const char hex[] = "0123456789abcdef";
+    const unsigned char *p = (const unsigned char *)(msg ? msg : "");
+    for (; *p; ++p) {
+        char encoded[6];
+        size_t length = 1;
+        encoded[0] = (char)*p;
+        if (*p == '"' || *p == '\\') {
+            encoded[0] = '\\'; encoded[1] = (char)*p; length = 2;
+        } else if (*p < 0x20 || *p == 0x7f) {
+            encoded[0] = '\\'; encoded[1] = 'u'; encoded[2] = '0'; encoded[3] = '0';
+            encoded[4] = hex[*p >> 4]; encoded[5] = hex[*p & 0x0f]; length = 6;
+        }
+        if (used + length >= sizeof escaped) break;
+        memcpy(escaped + used, encoded, length);
+        used += length;
+    }
+    escaped[used] = '\0';
     int n = snprintf(res->body_storage, sizeof res->body_storage,
-        "{\"error\":%d,\"message\":\"%s\"}", code, msg ? msg : "");
+        "{\"error\":%d,\"message\":\"%s\"}", code, escaped);
     if (n < 0 || (size_t)n >= sizeof res->body_storage) return ERROR_TOO_LONG;
     res->status = code;
     res->content_type = "application/json; charset=utf-8";

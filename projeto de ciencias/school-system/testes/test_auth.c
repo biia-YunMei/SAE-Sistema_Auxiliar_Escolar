@@ -91,6 +91,10 @@ int main(void)
     CHECK(auth_session_resolve(token, &r) == ERROR_UNAUTHORIZED);
 
     CHECK(auth_session_create(&s, token, sizeof token) == SUCCESS);
+    auth_session_revoke_user(s.user_id);
+    CHECK(auth_session_resolve(token, &r) == ERROR_UNAUTHORIZED);
+
+    CHECK(auth_session_create(&s, token, sizeof token) == SUCCESS);
     CHECK(users_delete(teacher_user_id) == SUCCESS);
     CHECK(auth_session_resolve(token, &r) == ERROR_UNAUTHORIZED);
 

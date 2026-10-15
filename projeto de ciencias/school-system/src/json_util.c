@@ -56,6 +56,33 @@ static int utf8_append(char *out, size_t cap, size_t *used, uint32_t cp)
     return 1;
 }
 
+/* Strings JSON chegam em UTF-8. Bytes não escapados precisam ser copiados
+ * como estão; só sequências \uXXXX devem passar por utf8_append(). */
+static int utf8_copy_raw(JsonParser *p, unsigned char lead,
+                         char *out, size_t cap, size_t *used)
+{
+    const unsigned char *start = p->p - 1;
+    size_t length;
+    if (lead < 0x80) length = 1;
+    else if (lead >= 0xc2 && lead <= 0xdf) length = 2;
+    else if (lead >= 0xe0 && lead <= 0xef) length = 3;
+    else if (lead >= 0xf0 && lead <= 0xf4) length = 4;
+    else return 0;
+
+    for (size_t i = 1; i < length; ++i)
+        if (start[i] == '\0' || (start[i] & 0xc0) != 0x80) return 0;
+    if ((lead == 0xe0 && start[1] < 0xa0) ||
+        (lead == 0xed && start[1] >= 0xa0) ||
+        (lead == 0xf0 && start[1] < 0x90) ||
+        (lead == 0xf4 && start[1] > 0x8f)) return 0;
+    if (out && (used == NULL || *used > cap || length >= cap - *used)) return 0;
+    if (out) memcpy(out + *used, start, length);
+    if (used == NULL || *used > SIZE_MAX - length) return 0;
+    *used += length;
+    p->p += length - 1;
+    return 1;
+}
+
 static int parse_string(JsonParser *p, char *out, size_t cap)
 {
     if (*p->p++ != '"') return 0;
@@ -64,28 +91,30 @@ static int parse_string(JsonParser *p, char *out, size_t cap)
         uint32_t cp;
         unsigned char c = *p->p++;
         if (c < 0x20) return 0;
-        if (c == '\\') {
-            c = *p->p++;
-            switch (c) {
-            case '"': case '\\': case '/': cp = c; break;
-            case 'b': cp = '\b'; break;
-            case 'f': cp = '\f'; break;
-            case 'n': cp = '\n'; break;
-            case 'r': cp = '\r'; break;
-            case 't': cp = '\t'; break;
-            case 'u':
-                if (!hex4(p, &cp)) return 0;
-                if (cp >= 0xd800 && cp <= 0xdbff) {
-                    uint32_t low;
-                    if (p->p[0] != '\\' || p->p[1] != 'u') return 0;
-                    p->p += 2;
-                    if (!hex4(p, &low) || low < 0xdc00 || low > 0xdfff) return 0;
-                    cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
-                } else if (cp >= 0xdc00 && cp <= 0xdfff) return 0;
-                break;
-            default: return 0;
-            }
-        } else cp = c;
+        if (c != '\\') {
+            if (!utf8_copy_raw(p, c, out, cap, &used)) return 0;
+            continue;
+        }
+        c = *p->p++;
+        switch (c) {
+        case '"': case '\\': case '/': cp = c; break;
+        case 'b': cp = '\b'; break;
+        case 'f': cp = '\f'; break;
+        case 'n': cp = '\n'; break;
+        case 'r': cp = '\r'; break;
+        case 't': cp = '\t'; break;
+        case 'u':
+            if (!hex4(p, &cp)) return 0;
+            if (cp >= 0xd800 && cp <= 0xdbff) {
+                uint32_t low;
+                if (p->p[0] != '\\' || p->p[1] != 'u') return 0;
+                p->p += 2;
+                if (!hex4(p, &low) || low < 0xdc00 || low > 0xdfff) return 0;
+                cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
+            } else if (cp >= 0xdc00 && cp <= 0xdfff) return 0;
+            break;
+        default: return 0;
+        }
         if (!utf8_append(out, cap, &used, cp)) return 0;
     }
     if (*p->p++ != '"') return 0;
