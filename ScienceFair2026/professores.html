@@ -263,44 +263,45 @@
           </div>
         </div>
 
-        <!-- HISTÓRICO DE MENSAGENS -->
-        <div class="tab-pane fade" id="page-mensagens" role="tabpanel">
-          <div class="card">
-            <div
-              class="card-header d-flex justify-content-between align-items-center flex-wrap"
-            >
-              <span>Histórico de mensagens</span>
-              <span class="badge badge-teal" id="totalMensagensBadge">0</span>
-            </div>
-            <div class="card-body">
-              <input
-                type="text"
-                class="form-control mb-3"
-                id="buscaMensagens"
-                placeholder="Buscar por remetente ou mensagem..."
-              />
-              <div class="table-scroll">
-                <table class="table table-hover">
-                  <thead>
-                    <tr>
-                      <th style="padding-left: 1.25rem">#</th>
-                      <th>Remetente</th>
-                      <th>Mensagem</th>
-                      <th>Hora do envio</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tabelaMensagens"></tbody>
-                </table>
-              </div>
-              <div id="emptyMensagens" class="text-muted text-center py-4">
-                Aqui aparecem as mensagens dos alunos das suas turmas. Nenhuma ainda.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+       <!-- HISTÓRICO DE MENSAGENS -->
+<div class="tab-pane fade" id="page-mensagens" role="tabpanel">
+  <div class="card">
+    <div
+      class="card-header d-flex justify-content-between align-items-center flex-wrap"
+    >
+      <span>Histórico de mensagens</span>
+      <span class="badge badge-teal" id="totalMensagensBadge">0</span>
     </div>
 
+    <div class="card-body">
+      <input
+        type="text"
+        class="form-control mb-3"
+        id="buscaMensagens"
+        placeholder="Buscar por mensagem..."
+      />
+
+      <div class="table-scroll">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th style="padding-left: 1.25rem">#</th>
+              <th>Mensagem</th>
+              <th>Hora do envio</th>
+            </tr>
+          </thead>
+          <tbody id="tabelaMensagens"></tbody>
+        </table>
+      </div>
+
+      <div id="emptyMensagens" class="text-muted text-center py-4">
+        Aqui aparecem as mensagens dos alunos das suas turmas. Nenhuma ainda.
+      </div>
+    </div>
+  </div>
+</div>
+
+        
     <!-- TOAST CONTAINER -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -852,56 +853,48 @@
           })
         }
 
-        // Tenta mapear o objeto vindo da API para { remetente, mensagem, hora }
-        // independente do nome dos campos.
         function normalizar(item) {
-          const nome = item.sender_name || item.name || item.nome || ''
-          const telefone = item.sender_phone || item.phone || item.telefone || ''
-          const referencia = item.sender_ref || item.from_ref || item.sender ||
-            item.remetente || item.from || item.sender_id || item.contact || ''
-          return {
-            remetente: nome
-              ? (telefone ? `${nome} (${telefone})` : nome)
-              : (telefone || referencia || '—'),
-            mensagem:
-              item.content ||
-              item.message ||
-              item.text ||
-              item.body ||
-              item.mensagem ||
-              '',
-            hora:
-              item.timestamp ||
-              item.created_at ||
-              item.sent_at ||
-              item.time ||
-              item.date ||
-              '',
-          }
-        }
+  return {
+    mensagem:
+      item.content ||
+      item.message ||
+      item.text ||
+      item.body ||
+      item.mensagem ||
+      '',
 
-        function render() {
-          const term = (search.value || '').toLowerCase().trim()
-          const filtradas = mensagens.filter(
-            (m) =>
-              String(m.remetente).toLowerCase().includes(term) ||
-              String(m.mensagem).toLowerCase().includes(term),
-          )
-          table.innerHTML = filtradas
-            .map(
-              (m, i) => `
-            <tr>
-              <td style="padding-left:1.25rem">${i + 1}</td>
-              <td>${escapeHtml(m.remetente)}</td>
-              <td>${escapeHtml(m.mensagem)}</td>
-              <td class="text-muted small">${escapeHtml(formatarHora(m.hora))}</td>
-            </tr>
-          `,
-            )
-            .join('')
-          empty.style.display = filtradas.length ? 'none' : 'block'
-          total.textContent = mensagens.length
-        }
+    hora:
+      item.timestamp ||
+      item.created_at ||
+      item.sent_at ||
+      item.time ||
+      item.date ||
+      '',
+  }
+}
+
+function render() {
+  const term = (search.value || '').toLowerCase().trim()
+
+  const filtradas = mensagens.filter((m) =>
+    String(m.mensagem).toLowerCase().includes(term),
+  )
+
+  table.innerHTML = filtradas
+    .map(
+      (m, i) => `
+        <tr>
+          <td style="padding-left:1.25rem">${i + 1}</td>
+          <td>${escapeHtml(m.mensagem)}</td>
+          <td class="text-muted small">${escapeHtml(formatarHora(m.hora))}</td>
+        </tr>
+      `,
+    )
+    .join('')
+
+  empty.style.display = filtradas.length ? 'none' : 'block'
+  total.textContent = mensagens.length
+}
 
         async function loadMensagens() {
           try {
