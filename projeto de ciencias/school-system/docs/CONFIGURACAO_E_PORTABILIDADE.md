@@ -37,7 +37,7 @@ projeto. O `.env` não deve ser enviado ao Git.
 |---|---|---|
 | `SERVER_HOST` | `0.0.0.0` | Endereço do servidor HTTP. |
 | `SERVER_PORT` | `8080` | Porta HTTP. |
-| `WEB_ROOT` | `../../ScienceFair2026` | Diretório das páginas estáticas. Relativo à pasta de execução do servidor. |
+| Front-end | `ScienceFair2026` do checkout usado no build | Caminho fixado no executável; independe da pasta de execução e não é sobrescrito por valores antigos no ambiente. Para personalizar, compile com `make SAE_WEB_ROOT=/caminho/absoluto`. |
 | `DATABASE_PATH` | `data/school.db` | Arquivo SQLite principal, relativo à pasta em que o servidor é iniciado. O antigo `$HOME/school.db` é redirecionado para esse caminho. |
 | `LOG_DIR` | `logs` | Diretório de logs. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARN` ou `ERROR`. |
@@ -55,7 +55,6 @@ Exemplo mínimo:
 
 ```dotenv
 SERVER_PORT=8080
-WEB_ROOT=../../ScienceFair2026
 SESSION_TIMEOUT_MIN=60
 LOG_LEVEL=INFO
 AI_PROVIDER=gemini

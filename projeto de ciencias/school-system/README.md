@@ -5,8 +5,7 @@ WhatsApp, com coordenação, professores, alunos, banco de dados e
 inteligência artificial. Desenvolvido para apresentação em feira de
 ciências.
 
-> ✅ **10 etapas concluídas** — base, banco, usuários, tarefas, API HTTP,
-> WhatsApp, IA, conversas, áudio/imagem, segurança/testes.
+> O núcleo C/SQLite, o painel, as regras de acesso e os fluxos de tarefas e comunicados estão implementados. Integrações externas e alguns itens de produção continuam pendentes; veja [Limitações conhecidas](#14-limitações-conhecidas) e [Próximas etapas](#15-próximas-etapas).
 
 ---
 
@@ -16,31 +15,30 @@ Núcleo do sistema que:
 
 * Cadastra e gerencia usuários (coordenador, professor, aluno).
 * Controla permissões e turmas.
-* Recebe e envia mensagens via WhatsApp.
-* Processa linguagem natural com IA (modo local heurístico + modo remoto opcional).
+* Consulta a inbox da API escolar e responde mensagens recebidas pelo ID original. Não inicia conversa com números arbitrários.
+* Processa perguntas com IA remota opcional e validação pelo back-end.
 * Armazena tarefas, provas, trabalhos e comunicados.
-* Expõe API HTTP para um futuro painel administrativo.
+* Expõe API HTTP integrada ao painel web em `../../ScienceFair2026`.
 
 ## 2. Arquitetura
 
 ```
 ┌──────────────────────────────┐
-│ HTTP/1.1 (sockets Linux/Windows) │ src/http/server.c
+│ Painel HTML/JS               │ ../../ScienceFair2026
 ├──────────────────────────────┤
-│ Roteador + controllers       │   src/http/{router,controllers}/*.c
+│ API HTTP + controllers       │ src/http/{server,router,controllers}/*.c
 ├──────────────────────────────┤
-│ Services (regras)            │   src/services/*
+│ Regras de negócio em C       │ src/*.c
 ├──────────────────────────────┤
-│ Repositories (acesso dados)  │   src/repositories/*
-├──────────────────────────────┤
-│ SQLite (migrations, FK, WAL) │   src/database.c
+│ SQLite (migrations, FK, WAL) │ src/database.c
 
-Módulos isolados (não conhecem o banco):
+Módulos principais:
   src/whatsapp.c      → abstração do canal
-  src/whatsapp_adapter.c → libcurl (opt-in via -DWHATSAPP_USE_CURL)
-  src/ai.c            → IA local/remota (remota ativada com libcurl e configuração)
-  src/transcription.c → áudio
-  src/image.c         → visão
+  src/whatsapp_adapter.c → libcurl para adaptador de WhatsApp configurado
+  src/escola_api.c       → inbox/reply da API escolar e worker automático
+  src/ai.c               → Gemini remoto opcional via libcurl
+  src/transcription.c    → interface local ainda sem provedor
+  src/image.c            → interface local ainda sem provedor
   src/conversations.c → máquina de estados
 ```
 
@@ -48,37 +46,28 @@ Módulos isolados (não conhecem o banco):
 
 ```
 school-system/
-├── Makefile                # gcc, -Wall -Wextra -Wpedantic, alvo sanitize
+├── Makefile                  # build, testes e instalação do comando sae
 ├── README.md
-├── .gitignore
-├── docs/                   # uso, permissões, configuração e portabilidade
-├── include/                # headers públicos (config, error, server, ai, ...)
+├── docs/                     # configuração, portabilidade e permissões
+├── include/                  # interfaces públicas dos módulos
 ├── src/
-│   ├── main.c              # bootstrap: config/logger/db/whatsapp/http
-│   ├── config.c / logger.c / error.c / validation.c
-│   ├── database.c          # SQLite + migrations
-│   ├── users.c / auth.c / permissions.c / classes.c
-│   ├── tasks.c             # CRUD com regra professor↔turma
-│   ├── whatsapp.c          # abstração
-│   ├── whatsapp_adapter.c  # concreto via libcurl (opt-in)
-│   ├── ai.c                # cliente IA
-│   ├── conversations.c     # máquina de estados
-│   ├── transcription.c / image.c
+│   ├── main.c                # inicialização da aplicação
+│   ├── database.c            # SQLite e migrations
+│   ├── auth.c / users.c       # autenticação e usuários
+│   ├── classes.c / tasks.c    # turmas e tarefas
+│   ├── escola_api.c           # inbox/reply e worker automático
+│   ├── ai.c                   # cliente de IA
 │   └── http/
 │       ├── server.c / router.c
-│       ├── controllers/{controllers.h, auth, users, classes, tasks, whatsapp, wrappers}.c
-│       ├── repositories/*.c
-│       └── services/*.c
-├── data/                   # banco SQLite local (ignorado pelo Git)
-├── logs/                   # logs locais (ignorados pelo Git)
-└── tests/                  # test_validation, test_error, test_logger,
-                            # test_database, test_auth, test_permissions,
-                            # test_tasks, test_http, test_whatsapp, test_ai
+│       └── controllers/       # endpoints HTTP
+├── testes/                   # testes automatizados
+└── data/                     # banco e cursor locais (ignorados pelo Git)
 ```
 
 Documentação complementar:
 
 * [Uso e permissões](docs/USO_E_PERMISSOES.md)
+* [Manual de WhatsApp para professores](docs/MANUAL_WHATSAPP_PROFESSORES.md)
 * [Configuração e portabilidade](docs/CONFIGURACAO_E_PORTABILIDADE.md)
 
 ## 4. Dependências e plataformas
@@ -89,8 +78,8 @@ Documentação complementar:
 
 | Opcionais (ativam módulos concretos) | Como ativar |
 |---|---|
-| libsqlite3-dev | `pkg-config --cflags sqlite3` em Makefile (auto-detect) |
-| libcurl-dev | `-DWHATSAPP_USE_CURL` e/ou `-DAI_USE_REMOTE` |
+| libsqlite3-dev | Obrigatória para persistência SQLite |
+| libcurl-dev | Necessária para IA remota e integrações HTTP externas |
 | libmicrohttpd-dev | — (não usamos; HTTP em C puro) |
 | libcjson-dev | — (não usamos; parser JSON mínimo próprio) |
 
@@ -225,6 +214,8 @@ sae tarefa excluir -i ID
 
 # WhatsApp — PROFESSOR autenticado
 sae whatsapp vincular
+# Remover o vínculo da conta autenticada de professor
+sae whatsapp desvincular
 # Responder uma mensagem recebida pela inbox
 sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM
 ```
@@ -274,8 +265,9 @@ SAE_UI=plain sae turma listar    # força a saída simples
 | GET    | /api/notices             | COORD/PROF ou aluno autenticado | lista comunicados permitidos |
 | POST   | /api/notices             | COORD | cria comunicado |
 | PUT/DELETE | /api/notices/:id      | COORD | edita/remove comunicado |
-| GET    | /api/messages            | COORD; PROF vê apenas mensagens de suas turmas | histórico local do inbox |
+| GET    | /api/messages            | COORD; PROF vê apenas mensagens de suas turmas | histórico; nome/telefone só aparecem quando esses dados existem no SAE |
 | POST   | /api/whatsapp/teacher-link-code | PROF | gera código temporário de vínculo WhatsApp |
+| DELETE | /api/whatsapp/teacher-link | PROF | remove o vínculo e descarta publicações ainda pendentes |
 
 ## 9. Autenticação e permissões
 
@@ -322,25 +314,37 @@ Coordenador (painel / API)
    └── vincula professor ↔ turma
 
 Professor (WhatsApp)
-   ├── autentica no SAE e gera código temporário com `sae whatsapp vincular`
+   ├── entra na tela Professores e seleciona “Vincular meu WhatsApp” (ou usa `sae whatsapp vincular`)
    ├── envia `VINCULAR <código>` ao número da escola pela inbox
    ├── sistema associa o remetente pseudônimo ao usuário autenticado
    ├── IA interpreta tarefa; sistema valida turma e vínculo professor↔turma
    ├── professor confirma; tarefa é gravada em `tasks`
-   └── para recados, envia `RECADO <turma>: <texto>` e confirma antes de publicar
+   ├── consulta suas tarefas com `MINHAS TAREFAS` e altera uma tarefa própria por ID
+   ├── consulta lembretes publicados com `LEMBRETES`
+   └── envia ou edita lembretes de suas turmas e confirma antes de publicar
 
 Aluno (WhatsApp)
-   ├── envia pergunta
-   ├── backend identifica
-   ├── busca contexto da turma
+   ├── API escolar entrega `from_ref` pseudônimo, sem telefone
+   ├── aluno escolhe a turma na consulta; o sistema não recebe telefone para identificar a pessoa
+   ├── sistema busca contexto da turma
    ├── IA orienta por etapas (nunca entrega resposta final)
    └── resposta enviada pelo WhatsApp
 ```
 
 O código de vínculo expira em 10 minutos, é de uso único e fica armazenado no
-banco somente como hash. O remetente anônimo não pode publicar antes do vínculo.
+banco somente como hash. O remetente anônimo não pode publicar antes do vínculo de professor.
+Na tela Professores, o botão “Vincular meu WhatsApp” gera e exibe o código; envie
+`VINCULAR <código>` pelo WhatsApp do SAE antes de ele expirar.
 Tarefas e recados são publicados para consulta quando o aluno pergunta; a API
 escolar atual não permite iniciar conversa nem enviar notificações em massa.
+
+Após vincular o WhatsApp, o professor pode enviar uma tarefa em linguagem
+natural e confirmar a prévia com `SIM`. Para consultar IDs e editar uma tarefa
+própria, use `MINHAS TAREFAS` e depois `EDITAR TAREFA <id> | título: ... |
+matéria: ... | descrição: ... | entrega: AAAA-MM-DD`. Lembretes são avisos
+associados a turmas: `LEMBRETE <turma>: <texto>` cria um, `LEMBRETES` lista os
+ativos do professor e `EDITAR LEMBRETE <id>: <novo texto>` prepara uma edição.
+As alterações só são gravadas após `SIM`; `CANCELAR` descarta o rascunho.
 
 ## 13. Testes
 
@@ -358,21 +362,26 @@ Cobre:
 * Auth (hash, telefone, sessão)
 * Permissões e turmas
 * Tasks (CRUD + regra professor↔turma + edição negada a não-dono)
-* HTTP server (saúde + 404)
-* WhatsApp (validação, tamanho, eco)
+* HTTP (roteamento e respostas; a parte que abre sockets depende das permissões do ambiente)
+* WhatsApp/feira (consultas por turma, código de vínculo de professor, publicação após confirmação e filtro de mensagens)
 * IA (parse, JSON, política anti-resposta-pronta)
 
-## 14. Limitações Conhecidas
+## 14. Limitações conhecidas
 
-* Áudio/imagem ainda em stub (pipeline pronto para plugar serviços).
-* Sem HTTPS embutido (use nginx/Caddy em produção).
-* Sessões em memória (não sobrevivem a restart).
-* Hash de senha didático (SHA-256+salt) — migrar para bcrypt em produção.
+* `src/transcription.c` e `src/image.c` ainda não têm provedor local e retornam `ERROR_NOT_IMPLEMENTED`. Na integração da feira, transcrição e descrição podem chegar prontas pela API escolar.
+* A API escolar fornece `from_ref` pseudônimo, não o telefone. O histórico pode mostrar o nome de um professor vinculado ou um telefone que já exista no banco; não consegue descobrir o número de um aluno a partir do identificador anônimo.
+* O histórico local registra a hora em que o SAE recebeu a mensagem. Embora a inbox forneça `ts`, esse horário original ainda não é salvo no banco. A tela exibe o registro local no fuso `America/Cuiaba`.
+* A rota de resposta exige o ID de uma mensagem recebida. A API escolar atual não permite iniciar conversa com um número arbitrário nem enviar notificações em massa.
+* Sem HTTPS embutido: use nginx/Caddy com TLS se o painel for publicado fora do computador local.
+* Sessões ficam em memória e não sobrevivem a reinício do servidor.
+* O hash atual é SHA-256 com salt; antes de produção, migrar para Argon2id ou bcrypt.
+* O teste do servidor HTTP precisa de permissão para abrir sockets; em ambientes restritos, ele é pulado.
 
-## 15. Roadmap (futuro)
+## 15. Próximas etapas
 
-* Persistir sessões (Redis/SQLite).
-* Painel web administrativo usando os endpoints HTTP.
-* Visão computacional para correção de exercícios.
-* Integração bidirecional WhatsApp (status de mensagens).
-* Migrations automáticas no `make`.
+* Validar o fluxo completo de inbox, IA e resposta em um celular autorizado, usando as credenciais locais sem publicá-las.
+* Definir com o mantenedor da API escolar se ela pode fornecer telefone real e horário original (`ts`); atualizar o SAE somente se o contrato for ampliado.
+* Implementar provedores locais de transcrição e visão se o funcionamento sem os serviços da API escolar for necessário.
+* Migrar hashes SHA-256 para Argon2id ou bcrypt.
+* Persistir sessões em SQLite ou Redis.
+* Executar os testes HTTP em um ambiente com sockets habilitados.

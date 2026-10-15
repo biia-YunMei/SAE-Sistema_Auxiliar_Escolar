@@ -34,6 +34,10 @@ MHD_CFLAGS  := $(shell pkg-config --cflags libmicrohttpd 2>/dev/null)
 MHD_LIBS    := $(shell pkg-config --libs   libmicrohttpd 2>/dev/null)
 
 CFLAGS      := $(STD) $(WARN) $(OPT) -Iinclude -Isrc -Isrc/http/controllers $(SQLITE_CFLAGS) $(CURL_CFLAGS) $(CRYPTO_CFLAGS) $(CRYPTO_DEF) $(MHD_CFLAGS)
+# O front-end fica fixado no binário, sem depender do diretório de execução nem
+# de valores antigos no ambiente/.env. Para outra pasta: make SAE_WEB_ROOT=/abs/path
+SAE_WEB_ROOT ?= $(abspath ../../ScienceFair2026)
+CFLAGS      += -DSAE_DEFAULT_WEB_ROOT='"$(subst \,/,$(SAE_WEB_ROOT))"'
 LDFLAGS     := $(SQLITE_LIBS) $(CURL_LIBS) $(CRYPTO_LIBS) $(MHD_LIBS)
 
 # Quando libcurl estiver instalada, o build padrao ja inclui o adaptador

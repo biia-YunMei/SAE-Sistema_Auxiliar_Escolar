@@ -30,6 +30,10 @@
 #include <unistd.h>
 #endif
 
+#ifndef SAE_DEFAULT_WEB_ROOT
+#define SAE_DEFAULT_WEB_ROOT "../../ScienceFair2026"
+#endif
+
 static AppConfig g_current_config;
 static int g_config_loaded = 0;
 static pthread_mutex_t g_bootstrap_env_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -242,7 +246,7 @@ int config_load(AppConfig *out)
     }
     copy_str(out->database_path, sizeof out->database_path,
              database_path, "data/school.db");
-    copy_str(out->web_root, sizeof out->web_root, getenv("WEB_ROOT"), "../../ScienceFair2026");
+    copy_str(out->web_root, sizeof out->web_root, NULL, SAE_DEFAULT_WEB_ROOT);
     copy_str(out->log_dir,        sizeof out->log_dir,        getenv("LOG_DIR"),        "logs");
     copy_str(out->log_level,      sizeof out->log_level,      getenv("LOG_LEVEL"),      "INFO");
     copy_str(out->media_dir,      sizeof out->media_dir,      getenv("MEDIA_DIR"),      "data/media");

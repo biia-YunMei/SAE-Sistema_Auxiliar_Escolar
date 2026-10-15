@@ -136,6 +136,98 @@ int anonymous_teacher_link_user(const char *sender_ref, int64_t *user_id_out)
     return step == SQLITE_ROW ? SUCCESS : step == SQLITE_DONE ? ERROR_NOT_FOUND : ERROR_DATABASE;
 }
 
+int anonymous_teacher_link_remove(int64_t teacher_user_id, int *was_linked_out)
+{
+    if (teacher_user_id <= 0 || !was_linked_out) return ERROR_INVALID_INPUT;
+    *was_linked_out = 0;
+
+    char sender_ref[80] = {0};
+    sqlite3_stmt *st = NULL;
+    if (db_exec("BEGIN IMMEDIATE;") != SUCCESS) return ERROR_DATABASE;
+    if (db_prepare("SELECT from_ref FROM whatsapp_teacher_links WHERE user_id=?;", &st) != SUCCESS) {
+        (void)db_rollback();
+        return ERROR_DATABASE;
+    }
+    if (db_bind_int64(st, 1, (long long)teacher_user_id) != SUCCESS) {
+        sqlite3_finalize(st);
+        (void)db_rollback();
+        return ERROR_DATABASE;
+    }
+    int step = sqlite3_step(st);
+    if (step == SQLITE_ROW) {
+        const unsigned char *value = sqlite3_column_text(st, 0);
+        if (!value || strlen((const char *)value) >= sizeof sender_ref) {
+            sqlite3_finalize(st);
+            (void)db_rollback();
+            return ERROR_DATABASE;
+        }
+        snprintf(sender_ref, sizeof sender_ref, "%s", (const char *)value);
+    } else if (step != SQLITE_DONE) {
+        sqlite3_finalize(st);
+        (void)db_rollback();
+        return ERROR_DATABASE;
+    }
+    sqlite3_finalize(st);
+
+    if (sender_ref[0]) {
+        static const char *cleanup_sql[] = {
+            "DELETE FROM pending_tasks WHERE phone=?;",
+            "DELETE FROM pending_teacher_task_edits WHERE from_ref=? AND user_id=?;",
+            "DELETE FROM pending_teacher_notices WHERE from_ref=? AND user_id=?;",
+            "DELETE FROM pending_teacher_notice_edits WHERE from_ref=? AND user_id=?;"
+        };
+        for (size_t i = 0; i < sizeof cleanup_sql / sizeof cleanup_sql[0]; ++i) {
+            if (db_prepare(cleanup_sql[i], &st) != SUCCESS) {
+                (void)db_rollback();
+                return ERROR_DATABASE;
+            }
+            int bound = db_bind_text(st, 1, sender_ref) == SUCCESS;
+            if (i != 0) bound = bound && db_bind_int64(st, 2, (long long)teacher_user_id) == SUCCESS;
+            step = bound ? sqlite3_step(st) : SQLITE_ERROR;
+            sqlite3_finalize(st);
+            if (step != SQLITE_DONE) {
+                (void)db_rollback();
+                return ERROR_DATABASE;
+            }
+        }
+        if (db_prepare("DELETE FROM whatsapp_teacher_links WHERE user_id=?;", &st) != SUCCESS) {
+            (void)db_rollback();
+            return ERROR_DATABASE;
+        }
+        if (db_bind_int64(st, 1, (long long)teacher_user_id) != SUCCESS) {
+            sqlite3_finalize(st);
+            (void)db_rollback();
+            return ERROR_DATABASE;
+        }
+        step = sqlite3_step(st);
+        int removed = step == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+        sqlite3_finalize(st);
+        if (step != SQLITE_DONE || !removed) {
+            (void)db_rollback();
+            return ERROR_DATABASE;
+        }
+        *was_linked_out = 1;
+    }
+
+    if (db_prepare("DELETE FROM whatsapp_teacher_link_codes WHERE user_id=?;", &st) != SUCCESS) {
+        (void)db_rollback();
+        return ERROR_DATABASE;
+    }
+    if (db_bind_int64(st, 1, (long long)teacher_user_id) != SUCCESS) {
+        sqlite3_finalize(st);
+        (void)db_rollback();
+        return ERROR_DATABASE;
+    }
+    step = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (step != SQLITE_DONE || db_commit() != SUCCESS) {
+        (void)db_rollback();
+        *was_linked_out = 0;
+        return ERROR_DATABASE;
+    }
+    return SUCCESS;
+}
+
 static int normalize_code(const char *source, char out[17])
 {
     static const char alphabet[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";

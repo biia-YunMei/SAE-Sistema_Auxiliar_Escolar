@@ -26,11 +26,13 @@ A coordenação administra usuários, turmas e comunicados. Professores podem ca
 | Área | Disponível atualmente |
 | --- | --- |
 | Usuários | Cadastro e listagem de coordenadores, professores e alunos. |
-| Acesso | Login por telefone e senha; sessão por token e logout. |
+| Acesso | Login por telefone e senha; token de sessão mantido em memória pelo servidor. |
 | Turmas | Criação de turmas e vínculo de professores e alunos. |
 | Tarefas | Criação e listagem por turma; edição e exclusão pela API. |
 | Comunicados | API para criar e consultar avisos. |
-| WhatsApp | O cliente C consulta a inbox com cursor persistente, oculta mensagens sem moderação `ok` e responde vinculando a resposta ao ID da mensagem. |
+| WhatsApp | Com a integração configurada, o cliente consulta a inbox a cada 20 segundos, filtra a moderação e responde citando o ID recebido. A API fornece `from_ref` pseudônimo, não o telefone, e não permite iniciar conversa com um número arbitrário. |
+| Histórico de mensagens | Exibe nome/telefone quando esses dados existem no SAE; pela API escolar, mensagens de alunos chegam apenas com identificador pseudônimo. O horário exibido é o registro local, no fuso de Cuiabá. |
+| IA e mídia | A IA remota é opcional. A API escolar pode fornecer transcrição/descrição; os módulos locais de áudio e imagem ainda são stubs. |
 | Segurança | Permissões por perfil, SQL parametrizado, validação de entrada e limite de tentativas de login. |
 | Portabilidade | Build para MSYS2/Windows, Ubuntu e derivados, NixOS e outras distribuições Linux. |
 
@@ -45,8 +47,8 @@ SAE-Sistema_Auxiliar_Escolar/
 │       ├── src/                     # Implementação da API e CLI
 │       ├── testes/                  # Testes automatizados
 │       ├── Makefile                 # Compilação e instalação do comando
-│       └── flake.nix                # Ambiente NixOS
-├── docs/                            # Documentação técnica
+│       ├── flake.nix                # Ambiente NixOS
+│       └── docs/                    # Documentação técnica do back-end
 └── README.md
 ```
 
@@ -96,16 +98,16 @@ sae servidor
 Com o servidor em execução, abra outro terminal e crie o primeiro coordenador apenas uma vez:
 
 ```bash
-sae -ca -n "Seu nome" -p "+5566999999999" -s "uma-senha-segura"
+sae -ca -n "Seu nome" -p "+5566999999999"
 ```
 
 Depois, entre no sistema:
 
 ```bash
-sae login -p "+5566999999999" -s "uma-senha-segura"
+sae login -p "+5566999999999"
 ```
 
-Para encerrar o acesso neste computador:
+O terminal solicita a senha sem exibi-la. Não passe senhas como argumentos. Para encerrar o acesso neste computador:
 
 ```bash
 sae logout
@@ -119,9 +121,9 @@ O logout apaga o token salvo localmente e invalida a sessão no servidor. Para u
 | --- | --- |
 | Ver toda a ajuda | `sae --help` |
 | Iniciar o servidor | `sae servidor` |
-| Entrar | `sae login -p TELEFONE -s SENHA` |
+| Entrar | `sae login -p TELEFONE` (a senha é solicitada sem aparecer na tela) |
 | Sair | `sae logout` |
-| Criar usuário | `sae usuario criar -n NOME -p TELEFONE -t COORD\|PROF\|STUD -s SENHA` |
+| Criar usuário | `sae usuario criar -n NOME -p TELEFONE -t COORD\|PROF\|STUD` |
 | Listar usuários | `sae usuario listar` |
 | Criar turma | `sae turma criar -n NOME -g SERIE -t MANHA\|TARDE\|NOITE\|INTEGRAL` |
 | Listar turmas | `sae turma listar` |
@@ -133,7 +135,7 @@ O logout apaga o token salvo localmente e invalida a sessão no servidor. Para u
 Exemplo de criação de professor, turma e tarefa:
 
 ```bash
-sae usuario criar -n "Ana" -p "+5566999999999" -t PROF -s "senha-da-ana"
+sae usuario criar -n "Ana" -p "+5566999999999" -t PROF
 sae turma criar -n "1º Ano A" -g "1º Ano" -t MANHA
 sae turma vincular -c 1 -u 2
 sae tarefa criar -c 1 -u 1 -m "Matemática" -n "Exercícios da página 20" -v 2026-10-15
@@ -219,7 +221,7 @@ As rotas antigas de WhatsApp Business Cloud, tokens da Meta e webhook não fazem
 ## Desenvolvimento e qualidade
 
 ```bash
-make            # Compila e atualiza o comando sae
+make            # Compila, executa os testes e atualiza o comando sae
 make tests      # Compila e executa os testes
 make debug      # Compila com símbolos de depuração
 make sanitize   # Compila com AddressSanitizer e UBSan
@@ -228,9 +230,8 @@ make clean      # Remove arquivos gerados
 
 ## Documentação
 
-- [Arquitetura do back-end](docs/ARQUITETURA.md)
-- [Referência da API HTTP](docs/API.md)
-- [Padrões de código e contribuição](docs/CONTRIBUINDO.md)
+- [Uso e permissões](projeto%20de%20ciencias/school-system/docs/USO_E_PERMISSOES.md)
+- [Configuração e portabilidade](projeto%20de%20ciencias/school-system/docs/CONFIGURACAO_E_PORTABILIDADE.md)
 - Referência atualizada da API: `GET /api/escola/sandbox/ref` (base `https://api.cidades.io`).
 - [Documentação detalhada do back-end](projeto%20de%20ciencias/school-system/README.md)
 
@@ -238,9 +239,13 @@ make clean      # Remove arquivos gerados
 
 - [x] Integrar no back-end C as rotas `whoami`, `inbox`, `reply` e `ref`, com cursor persistente e filtro de moderação.
 - [ ] Validar os comandos do cliente C com a chave local e testar uma resposta no celular autorizado.
-- [ ] Processar áudio e imagem para apoiar o atendimento aos alunos.
+- [ ] Persistir o `ts` original da API; atualmente o histórico registra quando o SAE recebeu a mensagem e exibe no fuso de Cuiabá.
+- [ ] Decidir, com quem mantém a API escolar, se o telefone real poderá ser fornecido. Sem esse dado, o SAE só pode exibir `from_ref` e nomes de contatos já vinculados.
+- [ ] Implementar provedores locais de áudio e imagem; `src/transcription.c` e `src/image.c` ainda retornam `ERROR_NOT_IMPLEMENTED`.
+- [ ] Adicionar suporte de envio a número arbitrário somente se a API escolar oferecer essa rota. Hoje o envio é resposta a uma mensagem recebida.
 - [ ] Usar hash de senha com Argon2 ou bcrypt antes de produção.
 - [ ] Persistir sessões em banco de dados ou Redis.
+- [ ] Executar os testes HTTP em ambiente com permissão para abrir sockets; no ambiente de desenvolvimento usado, esse teste foi pulado por essa restrição.
 
 ---
 

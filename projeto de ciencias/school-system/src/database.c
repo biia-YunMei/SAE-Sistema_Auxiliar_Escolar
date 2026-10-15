@@ -343,6 +343,27 @@ static int run_migrations(void)
           " FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,"
           " FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE"
           ");"
+        },
+        { 26,
+          "CREATE TABLE IF NOT EXISTS pending_teacher_task_edits ("
+          " from_ref TEXT PRIMARY KEY, user_id INTEGER NOT NULL, task_id INTEGER NOT NULL,"
+          " teacher_id INTEGER NOT NULL, class_id INTEGER NOT NULL, subject TEXT NOT NULL,"
+          " title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', due_date TEXT NOT NULL,"
+          " updated_at TEXT NOT NULL DEFAULT(datetime('now'))," 
+          " FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE"
+          ");"
+          "CREATE TABLE IF NOT EXISTS pending_teacher_notice_edits ("
+          " from_ref TEXT PRIMARY KEY, user_id INTEGER NOT NULL, notice_id INTEGER NOT NULL,"
+          " class_id INTEGER NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL,"
+          " updated_at TEXT NOT NULL DEFAULT(datetime('now'))," 
+          " FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(notice_id) REFERENCES notices(id) ON DELETE CASCADE,"
+          " FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE"
+          ");"
+          "CREATE INDEX IF NOT EXISTS idx_notices_author_class ON notices(author_id,class_id,status);"
         }
     };
 

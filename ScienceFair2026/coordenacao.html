@@ -1745,6 +1745,19 @@
         const search = document.getElementById('buscaMensagens')
         if (!table) return
 
+        // Mantém a tabela restrita às colunas públicas da tela, mesmo se um
+        // cabeçalho antigo voltar a existir no HTML servido.
+        const header = table.closest('table')?.querySelector('thead')
+        if (header) {
+          header.innerHTML = `
+            <tr>
+              <th style="padding-left:1.25rem">#</th>
+              <th>Mensagem</th>
+              <th>Hora do envio</th>
+            </tr>
+          `
+        }
+
         let mensagens = []
 
         function escapeHtml(v) {
@@ -1775,8 +1788,8 @@
           })
         }
 
-        // Tenta mapear o objeto vindo da API para { remetente, mensagem, hora }
-        // independente do nome dos campos.
+        // Só conserva os campos que a tabela apresenta; identificadores de
+        // remetente retornados pela API são deliberadamente descartados.
        function normalizar(item) {
   return {
     mensagem:

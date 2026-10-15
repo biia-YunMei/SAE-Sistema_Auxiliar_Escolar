@@ -461,6 +461,25 @@ int ctrl_whatsapp_teacher_link_code(const HttpRequest *req, HttpResponse *res)
     return http_respond_json(res, 201, response);
 }
 
+/* Remove o vínculo do WhatsApp apenas da conta de professor autenticada. */
+int ctrl_whatsapp_teacher_unlink(const HttpRequest *req, HttpResponse *res)
+{
+    if (strcmp(req->method, "DELETE") != 0)
+        return http_respond_error(res, 405, "method not allowed");
+    AuthSession session;
+    if (!req->auth || auth_session_resolve(req->auth, &session) != SUCCESS)
+        return http_respond_error(res, 401, "invalid session");
+    if (session.type != USER_TYPE_PROF)
+        return http_respond_error(res, 403, "teacher only");
+
+    int was_linked = 0;
+    if (anonymous_teacher_link_remove(session.user_id, &was_linked) != SUCCESS)
+        return http_respond_error(res, 500, "could not remove WhatsApp link");
+    return http_respond_json(res, 200, was_linked
+        ? "{\"status\":\"unlinked\",\"was_linked\":true}"
+        : "{\"status\":\"unlinked\",\"was_linked\":false}");
+}
+
 /* Envio individual para estudantes matriculados na turma. Professores só
  * podem enviar para turmas às quais estão vinculados; coordenação pode todas. */
 int ctrl_whatsapp_notify_class(const HttpRequest *req, HttpResponse *res)

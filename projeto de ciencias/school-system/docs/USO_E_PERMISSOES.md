@@ -1,5 +1,8 @@
 # Uso, comandos e permissões
 
+Para o passo a passo completo de vínculo, tarefas, edições e lembretes, consulte o
+[Manual de WhatsApp para professores](MANUAL_WHATSAPP_PROFESSORES.md).
+
 ## Primeiro acesso
 
 Inicie a API em um terminal:
@@ -66,6 +69,22 @@ sae tarefa excluir -i ID
 sae whatsapp enviar -p TELEFONE -m MENSAGEM
 sae whatsapp turma -c ID_TURMA -m MENSAGEM
 ```
+
+Na página `professores.html`, entre em **Visão geral** e selecione
+**Vincular meu WhatsApp**. Envie `VINCULAR <código>` pelo WhatsApp do SAE em até
+10 minutos. Depois do vínculo, o professor pode enviar uma tarefa em linguagem
+natural. O sistema mostra uma prévia e só publica após `SIM`.
+Para remover o vínculo da própria conta, use **Desvincular WhatsApp** no painel
+ou `sae whatsapp desvincular`. Rascunhos não confirmados são descartados;
+tarefas e avisos já publicados permanecem.
+`MINHAS TAREFAS` lista as tarefas próprias; para editar, envie
+`EDITAR TAREFA <id> | título: novo título | matéria: matéria | descrição: texto | entrega: AAAA-MM-DD`.
+Campos não informados permanecem iguais e a turma não pode ser trocada pelo
+WhatsApp. Para lembretes por turma, use `LEMBRETE <turma>: <texto>`;
+`LEMBRETES` lista os ativos e `EDITAR LEMBRETE <id>: <novo texto>` prepara
+uma edição. Confirme publicações e alterações com `SIM`; use `CANCELAR` para
+descartar. O professor só pode alterar tarefas e lembretes próprios, em turmas
+ativas às quais continua vinculado.
 
 O parâmetro `-u ID_PROF` é necessário ao coordenador criar uma tarefa. Para o
 professor, o sistema identifica automaticamente o próprio perfil.

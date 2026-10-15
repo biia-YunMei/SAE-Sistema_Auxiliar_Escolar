@@ -27,6 +27,16 @@ typedef struct {
     char subject[64], title[121], description[1024], due_date[11];
 } PendingTask;
 
+typedef struct {
+    int64_t user_id, task_id;
+    PendingTask task;
+} PendingTaskEdit;
+
+typedef struct {
+    int64_t user_id, notice_id, class_id;
+    char title[121], content[2001];
+} PendingNoticeEdit;
+
 /* Interpreta a turma indicada por um professor ou em uma consulta escolar. */
 static int class_mentioned(const char *body, Class *classroom);
 static int normalize_class_reference(const char *input, char *out, size_t cap);
@@ -83,6 +93,25 @@ static int prefix_ci(const char *text, const char *prefix)
     while (*prefix) {
         if (!*text || tolower((unsigned char)*text++) != tolower((unsigned char)*prefix++)) return 0;
     }
+    return 1;
+}
+
+/* Lê comandos como "EDITAR TAREFA 12 | ..." sem aceitar sufixos no ID. */
+static int command_target_id(const char *body, const char *prefix,
+                             int64_t *id_out, const char **tail_out)
+{
+    if (!body || !prefix || !id_out || !tail_out || !prefix_ci(body, prefix)) return 0;
+    const char *p = body + strlen(prefix);
+    if (*p && !isspace((unsigned char)*p)) return 0;
+    while (isspace((unsigned char)*p)) ++p;
+    errno = 0;
+    char *end = NULL;
+    long long id = strtoll(p, &end, 10);
+    if (errno == ERANGE || end == p || id <= 0) return -1;
+    while (isspace((unsigned char)*end)) ++end;
+    if (*end != ':' && *end != '|') return -1;
+    *id_out = (int64_t)id;
+    *tail_out = end + 1;
     return 1;
 }
 
@@ -249,8 +278,133 @@ static void pending_delete(const char *phone)
     }
 }
 
+static int pending_task_edit_save(const char *from_ref, int64_t user_id,
+                                  int64_t task_id, const PendingTask *task)
+{
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("INSERT INTO pending_teacher_task_edits(from_ref,user_id,task_id,teacher_id,class_id,subject,title,description,due_date) "
+                   "VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(from_ref) DO NOTHING;", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, from_ref); db_bind_int64(st, 2, (long long)user_id);
+    db_bind_int64(st, 3, (long long)task_id); db_bind_int64(st, 4, (long long)task->teacher_id);
+    db_bind_int64(st, 5, (long long)task->class_id); db_bind_text(st, 6, task->subject);
+    db_bind_text(st, 7, task->title); db_bind_text(st, 8, task->description);
+    db_bind_text(st, 9, task->due_date);
+    int rc = sqlite3_step(st);
+    int inserted = rc == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+    sqlite3_finalize(st);
+    return rc != SQLITE_DONE ? ERROR_DATABASE : inserted ? SUCCESS : ERROR_ALREADY_EXISTS;
+}
+
+static int pending_task_edit_load(const char *from_ref, PendingTaskEdit *edit)
+{
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("SELECT user_id,task_id,teacher_id,class_id,subject,title,description,due_date "
+                   "FROM pending_teacher_task_edits WHERE from_ref=?;", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, from_ref);
+    if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); return ERROR_NOT_FOUND; }
+    edit->user_id = sqlite3_column_int64(st, 0);
+    edit->task_id = sqlite3_column_int64(st, 1);
+    edit->task.teacher_id = sqlite3_column_int64(st, 2);
+    edit->task.class_id = sqlite3_column_int64(st, 3);
+    snprintf(edit->task.subject, sizeof edit->task.subject, "%s", (const char *)sqlite3_column_text(st, 4));
+    snprintf(edit->task.title, sizeof edit->task.title, "%s", (const char *)sqlite3_column_text(st, 5));
+    snprintf(edit->task.description, sizeof edit->task.description, "%s", (const char *)sqlite3_column_text(st, 6));
+    snprintf(edit->task.due_date, sizeof edit->task.due_date, "%s", (const char *)sqlite3_column_text(st, 7));
+    sqlite3_finalize(st);
+    return SUCCESS;
+}
+
+static void pending_task_edit_delete(const char *from_ref, int64_t user_id)
+{
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("DELETE FROM pending_teacher_task_edits WHERE from_ref=? AND user_id=?;", &st) == SUCCESS) {
+        db_bind_text(st, 1, from_ref); db_bind_int64(st, 2, (long long)user_id);
+        (void)sqlite3_step(st); sqlite3_finalize(st);
+    }
+}
+
+static int pending_notice_edit_save(const char *from_ref, int64_t user_id,
+                                    int64_t notice_id, int64_t class_id,
+                                    const char *title, const char *content)
+{
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("INSERT INTO pending_teacher_notice_edits(from_ref,user_id,notice_id,class_id,title,content) "
+                   "VALUES(?,?,?,?,?,?) ON CONFLICT(from_ref) DO NOTHING;", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, from_ref); db_bind_int64(st, 2, (long long)user_id);
+    db_bind_int64(st, 3, (long long)notice_id); db_bind_int64(st, 4, (long long)class_id);
+    db_bind_text(st, 5, title); db_bind_text(st, 6, content);
+    int rc = sqlite3_step(st);
+    int inserted = rc == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+    sqlite3_finalize(st);
+    return rc != SQLITE_DONE ? ERROR_DATABASE : inserted ? SUCCESS : ERROR_ALREADY_EXISTS;
+}
+
+static int pending_notice_edit_load(const char *from_ref, PendingNoticeEdit *edit)
+{
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("SELECT user_id,notice_id,class_id,title,content FROM pending_teacher_notice_edits WHERE from_ref=?;", &st) != SUCCESS)
+        return ERROR_DATABASE;
+    db_bind_text(st, 1, from_ref);
+    if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); return ERROR_NOT_FOUND; }
+    edit->user_id = sqlite3_column_int64(st, 0);
+    edit->notice_id = sqlite3_column_int64(st, 1);
+    edit->class_id = sqlite3_column_int64(st, 2);
+    snprintf(edit->title, sizeof edit->title, "%s", (const char *)sqlite3_column_text(st, 3));
+    snprintf(edit->content, sizeof edit->content, "%s", (const char *)sqlite3_column_text(st, 4));
+    sqlite3_finalize(st);
+    return SUCCESS;
+}
+
+static void pending_notice_edit_delete(const char *from_ref, int64_t user_id)
+{
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("DELETE FROM pending_teacher_notice_edits WHERE from_ref=? AND user_id=?;", &st) == SUCCESS) {
+        db_bind_text(st, 1, from_ref); db_bind_int64(st, 2, (long long)user_id);
+        (void)sqlite3_step(st); sqlite3_finalize(st);
+    }
+}
+
+static int teacher_pending_count(const char *from_ref)
+{
+    static const char sql[] =
+        "SELECT (SELECT count(*) FROM pending_tasks WHERE phone=?) +"
+        " (SELECT count(*) FROM pending_teacher_task_edits WHERE from_ref=?) +"
+        " (SELECT count(*) FROM pending_teacher_notices WHERE from_ref=?) +"
+        " (SELECT count(*) FROM pending_teacher_notice_edits WHERE from_ref=?);";
+    sqlite3_stmt *st = NULL;
+    if (db_prepare(sql, &st) != SUCCESS) return -1;
+    for (int i = 1; i <= 4; ++i) db_bind_text(st, i, from_ref);
+    int count = sqlite3_step(st) == SQLITE_ROW ? sqlite3_column_int(st, 0) : -1;
+    sqlite3_finalize(st);
+    return count;
+}
+
+static void teacher_pending_clear(const char *from_ref, int64_t user_id)
+{
+    pending_delete(from_ref);
+    pending_task_edit_delete(from_ref, user_id);
+    sqlite3_stmt *st = NULL;
+    if (db_prepare("DELETE FROM pending_teacher_notices WHERE from_ref=? AND user_id=?;", &st) == SUCCESS) {
+        db_bind_text(st, 1, from_ref); db_bind_int64(st, 2, (long long)user_id);
+        (void)sqlite3_step(st); sqlite3_finalize(st);
+    }
+    pending_notice_edit_delete(from_ref, user_id);
+}
+
 static int teacher_task(const char *phone, int64_t user_id, const char *body, char *reply, size_t cap)
 {
+    int pending_count = teacher_pending_count(phone);
+    if (pending_count < 0) {
+        snprintf(reply, cap, "Não consegui verificar suas publicações pendentes.");
+        return SUCCESS;
+    }
+    if (pending_count > 0) {
+        snprintf(reply, cap, "Voce ja tem uma publicacao aguardando confirmacao. Responda SIM ou CANCELAR antes de iniciar outra.");
+        return SUCCESS;
+    }
     PendingTask existing;
     if (pending_load(phone, &existing) == SUCCESS) {
         snprintf(reply, cap, "Voce ja tem uma tarefa aguardando confirmacao. Responda SIM para publicar, EDITAR para substituir ou CANCELAR para descartar.");
@@ -275,7 +429,15 @@ static int teacher_task(const char *phone, int64_t user_id, const char *body, ch
     if (teacher_id(user_id,&task.teacher_id) != SUCCESS) {
         snprintf(reply,cap,"Seu cadastro de professor nao foi encontrado. Procure a coordenacao."); return SUCCESS;
     }
-    if (classes_find_by_name(class_name, &classroom) != SUCCESS) {
+    char opcoes[256] = {0};
+    int achou = resolve_class_reference(class_name, &classroom, opcoes, sizeof opcoes);
+    if (achou == 2) {
+        snprintf(reply, cap,
+            "Mais de uma turma combina com %s: %s. Envie de novo com o nome certo.",
+            class_name, opcoes);
+        return SUCCESS;
+    }
+    if (achou != 1) {
         snprintf(reply, cap,
             "A turma %s nao esta cadastrada. Peça a coordenacao para cria-la antes de enviar a tarefa.",
             class_name);
@@ -300,6 +462,270 @@ static int teacher_task(const char *phone, int64_t user_id, const char *body, ch
     }
     snprintf(reply,cap,"Resumo: %s, turma %s, %s, entrega %s. Esta correto? Responda SIM ou EDITAR. Para descartar, CANCELAR.",task.subject,classroom.name,task.title,task.due_date);
     return SUCCESS;
+}
+
+static void teacher_list_tasks(int64_t user_id, char *reply, size_t cap)
+{
+    int64_t id = 0;
+    if (teacher_id(user_id, &id) != SUCCESS) {
+        snprintf(reply, cap, "Seu cadastro de professor não foi encontrado.");
+        return;
+    }
+    Task *items = NULL;
+    size_t count = 0;
+    if (tasks_list_by_teacher(id, false, &items, &count) != SUCCESS) {
+        snprintf(reply, cap, "Não consegui consultar suas tarefas agora.");
+        return;
+    }
+    if (count == 0) {
+        snprintf(reply, cap, "Você não tem tarefas ativas. Envie uma tarefa com turma, matéria, conteúdo e entrega para cadastrar.");
+        free(items);
+        return;
+    }
+    size_t used = (size_t)snprintf(reply, cap, "Suas próximas tarefas:\n");
+    if (used >= cap) used = cap - 1;
+    size_t shown = count < 8 ? count : 8;
+    for (size_t i = 0; i < shown && used < cap; ++i) {
+        Class classroom;
+        const char *class_name = classes_find_by_id(items[i].class_id, &classroom) == SUCCESS
+            ? classroom.name : "Turma indisponível";
+        int n = snprintf(reply + used, cap - used,
+                         "#%lld — %s (%s), entrega %s\n",
+                         (long long)items[i].id, items[i].title,
+                         class_name, items[i].due_date);
+        if (n < 0 || (size_t)n >= cap - used) { used = cap - 1; break; }
+        used += (size_t)n;
+    }
+    if (count > shown && used < cap)
+        (void)snprintf(reply + used, cap - used, "Para editar: EDITAR TAREFA <id> | matéria: ... | título: ... | entrega: AAAA-MM-DD");
+    else if (used < cap)
+        (void)snprintf(reply + used, cap - used, "Para editar: EDITAR TAREFA <id> | matéria: ... | título: ... | entrega: AAAA-MM-DD");
+    free(items);
+}
+
+static void teacher_list_reminders(int64_t user_id, char *reply, size_t cap)
+{
+    sqlite3_stmt *st = NULL;
+    const char *sql =
+        "SELECT n.id,c.name,n.title,n.content FROM notices n "
+        "JOIN classes c ON c.id=n.class_id "
+        "WHERE n.author_id=? AND n.status='ACTIVE' AND EXISTS ("
+        " SELECT 1 FROM teachers t JOIN teacher_classes tc ON tc.teacher_id=t.id "
+        " WHERE t.user_id=? AND tc.class_id=n.class_id) "
+        "ORDER BY n.id DESC LIMIT 8;";
+    if (db_prepare(sql, &st) != SUCCESS) {
+        snprintf(reply, cap, "Não consegui consultar seus lembretes agora.");
+        return;
+    }
+    db_bind_int64(st, 1, (long long)user_id);
+    db_bind_int64(st, 2, (long long)user_id);
+    size_t used = 0, count = 0;
+    int step;
+    while ((step = sqlite3_step(st)) == SQLITE_ROW && used < cap) {
+        int64_t id = sqlite3_column_int64(st, 0);
+        const char *class_name = (const char *)sqlite3_column_text(st, 1);
+        const char *title = (const char *)sqlite3_column_text(st, 2);
+        const char *content = (const char *)sqlite3_column_text(st, 3);
+        char short_content[121];
+        snprintf(short_content, sizeof short_content, "%.117s%s",
+                 content ? content : "", content && strlen(content) > 117 ? "..." : "");
+        int n = snprintf(reply + used, cap - used, "%s#%lld — %s (%s): %s",
+                         count ? "\n" : "Seus lembretes ativos:\n",
+                         (long long)id, title ? title : "Lembrete",
+                         class_name ? class_name : "Turma", short_content);
+        if (n < 0 || (size_t)n >= cap - used) { used = cap - 1; break; }
+        used += (size_t)n;
+        ++count;
+    }
+    sqlite3_finalize(st);
+    if (step != SQLITE_DONE && used == 0) {
+        snprintf(reply, cap, "Não consegui consultar seus lembretes agora.");
+    } else if (count == 0) {
+        snprintf(reply, cap, "Você ainda não publicou lembretes para suas turmas.");
+    } else if (used < cap) {
+        (void)snprintf(reply + used, cap - used, "\nPara editar: EDITAR LEMBRETE <id>: novo texto");
+    }
+}
+
+static int teacher_prepare_task_edit(const char *from_ref, int64_t user_id,
+                                     int64_t task_id, const char *fields,
+                                     char *reply, size_t cap)
+{
+    if (teacher_pending_count(from_ref) != 0) {
+        snprintf(reply, cap, "Resolva a publicação pendente com SIM ou CANCELAR antes de editar outra.");
+        return SUCCESS;
+    }
+    int64_t current_teacher_id = 0;
+    Task current;
+    Class classroom;
+    if (teacher_id(user_id, &current_teacher_id) != SUCCESS ||
+        tasks_find_by_id(task_id, &current) != SUCCESS) {
+        snprintf(reply, cap, "Não encontrei essa tarefa ativa no seu cadastro.");
+        return SUCCESS;
+    }
+    if (current.teacher_id != current_teacher_id) {
+        snprintf(reply, cap, "Você só pode editar tarefas que cadastrou.");
+        return SUCCESS;
+    }
+    if (classes_find_by_id(current.class_id, &classroom) != SUCCESS ||
+        strcmp(classroom.status, "ACTIVE") != 0 ||
+        !classes_teacher_has_access(current_teacher_id, current.class_id)) {
+        snprintf(reply, cap, "Você não está mais autorizado a editar essa tarefa para a turma.");
+        return SUCCESS;
+    }
+
+    PendingTask updated = {0};
+    updated.teacher_id = current.teacher_id;
+    updated.class_id = current.class_id;
+    snprintf(updated.subject, sizeof updated.subject, "%s", current.subject);
+    snprintf(updated.title, sizeof updated.title, "%s", current.title);
+    snprintf(updated.description, sizeof updated.description, "%s", current.description);
+    snprintf(updated.due_date, sizeof updated.due_date, "%s", current.due_date);
+    int changed = 0;
+    changed |= field(fields, "materia", updated.subject, sizeof updated.subject);
+    changed |= field(fields, "matéria", updated.subject, sizeof updated.subject);
+    changed |= field(fields, "titulo", updated.title, sizeof updated.title);
+    changed |= field(fields, "título", updated.title, sizeof updated.title);
+    changed |= field(fields, "descricao", updated.description, sizeof updated.description);
+    changed |= field(fields, "descrição", updated.description, sizeof updated.description);
+    changed |= field(fields, "entrega", updated.due_date, sizeof updated.due_date);
+    if (!changed || !validation_is_valid_date(updated.due_date)) {
+        snprintf(reply, cap, "Informe ao menos um campo para alterar. Use matéria, título, descrição ou entrega (AAAA-MM-DD).");
+        return SUCCESS;
+    }
+    int rc = pending_task_edit_save(from_ref, user_id, task_id, &updated);
+    if (rc != SUCCESS) {
+        snprintf(reply, cap, "Já existe uma alteração pendente para esse WhatsApp. Responda SIM ou CANCELAR.");
+        return SUCCESS;
+    }
+    snprintf(reply, cap,
+             "Prévia da tarefa #%lld — %s, turma %s, entrega %s. Responda SIM para salvar ou CANCELAR para descartar.",
+             (long long)task_id, updated.title, classroom.name, updated.due_date);
+    return SUCCESS;
+}
+
+static int teacher_prepare_notice_edit(const char *from_ref, int64_t user_id,
+                                       int64_t notice_id, const char *content,
+                                       char *reply, size_t cap)
+{
+    if (teacher_pending_count(from_ref) != 0) {
+        snprintf(reply, cap, "Resolva a publicação pendente com SIM ou CANCELAR antes de editar outra.");
+        return SUCCESS;
+    }
+    if (!validation_length_between(content, 3, 2000)) {
+        snprintf(reply, cap, "O novo texto do lembrete deve ter entre 3 e 2000 caracteres.");
+        return SUCCESS;
+    }
+    int64_t current_teacher_id = 0;
+    if (teacher_id(user_id, &current_teacher_id) != SUCCESS) {
+        snprintf(reply, cap, "Seu cadastro de professor não foi encontrado.");
+        return SUCCESS;
+    }
+    sqlite3_stmt *st = NULL;
+    const char *sql =
+        "SELECT n.class_id,n.title FROM notices n JOIN classes c ON c.id=n.class_id "
+        "WHERE n.id=? AND n.author_id=? AND n.status='ACTIVE' AND c.status='ACTIVE' "
+        "AND EXISTS(SELECT 1 FROM teacher_classes tc WHERE tc.teacher_id=? AND tc.class_id=n.class_id);";
+    if (db_prepare(sql, &st) != SUCCESS) {
+        snprintf(reply, cap, "Não consegui preparar a edição do lembrete.");
+        return SUCCESS;
+    }
+    db_bind_int64(st, 1, (long long)notice_id);
+    db_bind_int64(st, 2, (long long)user_id);
+    db_bind_int64(st, 3, (long long)current_teacher_id);
+    if (sqlite3_step(st) != SQLITE_ROW) {
+        sqlite3_finalize(st);
+        snprintf(reply, cap, "Lembrete não encontrado ou você não tem acesso para editá-lo.");
+        return SUCCESS;
+    }
+    int64_t class_id = sqlite3_column_int64(st, 0);
+    char title[121];
+    snprintf(title, sizeof title, "%s", (const char *)sqlite3_column_text(st, 1));
+    sqlite3_finalize(st);
+    int rc = pending_notice_edit_save(from_ref, user_id, notice_id, class_id, title, content);
+    if (rc != SUCCESS) {
+        snprintf(reply, cap, "Já existe uma alteração pendente para esse WhatsApp. Responda SIM ou CANCELAR.");
+        return SUCCESS;
+    }
+    Class classroom;
+    const char *class_name = classes_find_by_id(class_id, &classroom) == SUCCESS
+        ? classroom.name : "sua turma";
+    snprintf(reply, cap, "Prévia do lembrete #%lld para %s: %.700s. Responda SIM para salvar ou CANCELAR para descartar.",
+             (long long)notice_id, class_name, content);
+    return SUCCESS;
+}
+
+static void teacher_confirm_task_edit(const char *from_ref, int64_t user_id,
+                                      const PendingTaskEdit *edit,
+                                      char *reply, size_t cap)
+{
+    int64_t actual_teacher_id = 0;
+    Task current;
+    Class classroom;
+    if (edit->user_id != user_id || teacher_id(user_id, &actual_teacher_id) != SUCCESS ||
+        actual_teacher_id != edit->task.teacher_id ||
+        tasks_find_by_id(edit->task_id, &current) != SUCCESS ||
+        current.teacher_id != actual_teacher_id || current.class_id != edit->task.class_id ||
+        classes_find_by_id(current.class_id, &classroom) != SUCCESS ||
+        strcmp(classroom.status, "ACTIVE") != 0 ||
+        !classes_teacher_has_access(actual_teacher_id, current.class_id)) {
+        pending_task_edit_delete(from_ref, user_id);
+        snprintf(reply, cap, "A tarefa não está mais disponível para edição por este professor.");
+        return;
+    }
+    int rc = tasks_update(edit->task_id, actual_teacher_id, false,
+                          edit->task.subject, edit->task.title,
+                          edit->task.description, edit->task.due_date);
+    if (rc != SUCCESS) {
+        snprintf(reply, cap, "Não consegui atualizar a tarefa. A alteração continua pendente; responda SIM para tentar novamente ou CANCELAR.");
+        return;
+    }
+    pending_task_edit_delete(from_ref, user_id);
+    snprintf(reply, cap, "Tarefa #%lld atualizada.", (long long)edit->task_id);
+}
+
+static void teacher_confirm_notice_edit(const char *from_ref, int64_t user_id,
+                                        const PendingNoticeEdit *edit,
+                                        char *reply, size_t cap)
+{
+    int64_t actual_teacher_id = 0;
+    if (edit->user_id != user_id || teacher_id(user_id, &actual_teacher_id) != SUCCESS) {
+        pending_notice_edit_delete(from_ref, user_id);
+        snprintf(reply, cap, "Não foi possível confirmar o lembrete para esse cadastro.");
+        return;
+    }
+    if (db_begin() != SUCCESS) {
+        snprintf(reply, cap, "Não consegui iniciar a atualização do lembrete.");
+        return;
+    }
+    sqlite3_stmt *st = NULL;
+    const char *update_sql =
+        "UPDATE notices SET title=?,content=? WHERE id=? AND author_id=? AND class_id=? "
+        "AND status='ACTIVE' AND EXISTS(SELECT 1 FROM classes c WHERE c.id=notices.class_id "
+        "AND c.status='ACTIVE') AND EXISTS(SELECT 1 FROM teacher_classes tc "
+        "WHERE tc.teacher_id=? AND tc.class_id=notices.class_id);";
+    int ok = db_prepare(update_sql, &st) == SUCCESS;
+    if (ok) {
+        db_bind_text(st, 1, edit->title); db_bind_text(st, 2, edit->content);
+        db_bind_int64(st, 3, (long long)edit->notice_id);
+        db_bind_int64(st, 4, (long long)user_id);
+        db_bind_int64(st, 5, (long long)edit->class_id);
+        db_bind_int64(st, 6, (long long)actual_teacher_id);
+        ok = sqlite3_step(st) == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+        sqlite3_finalize(st);
+    }
+    if (ok && db_prepare("DELETE FROM pending_teacher_notice_edits WHERE from_ref=? AND user_id=? AND notice_id=?;", &st) == SUCCESS) {
+        db_bind_text(st, 1, from_ref); db_bind_int64(st, 2, (long long)user_id);
+        db_bind_int64(st, 3, (long long)edit->notice_id);
+        ok = sqlite3_step(st) == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+        sqlite3_finalize(st);
+    } else ok = 0;
+    if (!ok || db_commit() != SUCCESS) {
+        (void)db_rollback();
+        snprintf(reply, cap, "O lembrete deixou de estar autorizado ou não pôde ser atualizado.");
+        return;
+    }
+    snprintf(reply, cap, "Lembrete #%lld atualizado.", (long long)edit->notice_id);
 }
 
 static int class_mentioned(const char *body, Class *classroom)
@@ -470,7 +896,18 @@ static int class_word_is_ignored(const char *word)
     static const char *ignored[] = {
         "ano", "anos", "serie", "series", "turma", "do", "da", "de",
         "meu", "minha", "meus", "minhas", "sou", "aluno", "aluna",
-        "estudo", "estou", "no", "na", "classe", "sala", "com"
+        "estudo", "estou", "no", "na", "classe", "sala", "com",
+        "tarefas", "tarefa", "atividades", "atividade", "exercicios", "exercicio", "deveres", "dever",
+        "licao", "licoes", "trabalhos", "trabalho", "avisos", "aviso", "recados", "recado",
+        "comunicados", "comunicado", "provas", "prova", "avaliacoes", "avaliacao", "simulados", "simulado",
+        "agenda", "casa", "quais", "qual", "sao", "tem", "ha", "existe",
+        "existem", "liste", "lista", "listar", "mostra", "mostre", "mostrar", "manda",
+        "mande", "passa", "passe", "envia", "envie", "diz", "diga", "fala",
+        "fale", "quero", "queria", "gostaria", "preciso", "ver", "saber", "consultar",
+        "novamente", "novo", "todas", "todos", "tudo", "as", "os", "o",
+        "para", "pra", "pro", "pros", "me", "nos", "mim", "nossa",
+        "nosso", "hoje", "amanha", "semana", "proxima", "proximo", "por", "favor",
+        "pfv", "pf", "oi", "ola", "bom", "boa", "tarde", "noite"
     };
     for (size_t i = 0; i < sizeof ignored / sizeof ignored[0]; ++i)
         if (strcmp(word, ignored[i]) == 0) return 1;
@@ -593,6 +1030,16 @@ static int normalize_class_reference(const char *input, char *out, size_t cap)
         }
     }
     if (!class_flush_word(word, out, cap, &used)) return 0;
+    if (used && isalpha((unsigned char)out[0]) && strncmp(out, "id", 2) != 0) {
+        size_t skip = 0;
+        while (skip < used && isalpha((unsigned char)out[skip])) ++skip;
+        size_t digits = skip;
+        while (digits < used && isdigit((unsigned char)out[digits])) ++digits;
+        if (digits > skip && digits < used && isalpha((unsigned char)out[digits])) {
+            memmove(out, out + skip, used - skip + 1);
+            used -= skip;
+        }
+    }
     return used > 0;
 }
 
@@ -1046,6 +1493,15 @@ static int teacher_whatsapp_message(const char *sender_key, int64_t user_id,
         return SUCCESS;
     }
 
+    if (equal_ci(body, "AJUDA") || equal_ci(body, "MENU")) {
+        snprintf(reply, cap,
+                 "Professor: envie uma tarefa em texto e confirme com SIM. "
+                 "MINHAS TAREFAS lista suas tarefas; EDITAR TAREFA <id> | título: ... | entrega: AAAA-MM-DD altera uma. "
+                 "LEMBRETE <turma>: <texto> publica um aviso após confirmação; LEMBRETES lista os seus; "
+                 "EDITAR LEMBRETE <id>: <texto> altera um. CANCELAR descarta o rascunho.");
+        return SUCCESS;
+    }
+
     PendingTask task;
     int has_task = pending_load(sender_key, &task) == SUCCESS;
     sqlite3_stmt *st = NULL;
@@ -1057,27 +1513,84 @@ static int teacher_whatsapp_message(const char *sender_key, int64_t user_id,
     int64_t notice_user = has_notice ? sqlite3_column_int64(st, 0) : 0;
     sqlite3_finalize(st);
 
-    if (prefix_ci(body, "cancelar")) {
-        if (has_task) pending_delete(sender_key);
-        if (db_prepare("DELETE FROM pending_teacher_notices WHERE from_ref=? AND user_id=?;", &st) != SUCCESS)
-            return ERROR_DATABASE;
-        db_bind_text(st, 1, sender_key); db_bind_int64(st, 2, (long long)user.id);
-        int ok = sqlite3_step(st) == SQLITE_DONE; sqlite3_finalize(st);
-        snprintf(reply, cap, "%s", ok ? "Publicação pendente cancelada." : "Não consegui cancelar agora.");
+    PendingTaskEdit task_edit = {0};
+    int has_task_edit = pending_task_edit_load(sender_key, &task_edit) == SUCCESS;
+    PendingNoticeEdit notice_edit = {0};
+    int has_notice_edit = pending_notice_edit_load(sender_key, &notice_edit) == SUCCESS;
+
+    if (equal_ci(body, "MINHAS TAREFAS") || equal_ci(body, "LISTAR TAREFAS")) {
+        teacher_list_tasks(user.id, reply, cap);
         return SUCCESS;
     }
-    if (prefix_ci(body, "editar")) {
-        if (has_task) pending_delete(sender_key);
-        if (has_notice) {
-            if (db_prepare("DELETE FROM pending_teacher_notices WHERE from_ref=? AND user_id=?;", &st) != SUCCESS)
-                return ERROR_DATABASE;
-            db_bind_text(st, 1, sender_key); db_bind_int64(st, 2, (long long)user.id);
-            (void)sqlite3_step(st); sqlite3_finalize(st);
+    if (equal_ci(body, "LEMBRETES") || equal_ci(body, "MEUS LEMBRETES") ||
+        equal_ci(body, "LISTAR LEMBRETES")) {
+        teacher_list_reminders(user.id, reply, cap);
+        return SUCCESS;
+    }
+
+    int64_t target_id = 0;
+    const char *edit_tail = NULL;
+    int command = command_target_id(body, "editar tarefa", &target_id, &edit_tail);
+    if (command != 0) {
+        if (command < 0) {
+            snprintf(reply, cap, "Use EDITAR TAREFA <id> | matéria: ... | título: ... | entrega: AAAA-MM-DD.");
+            return SUCCESS;
         }
+        return teacher_prepare_task_edit(sender_key, user.id, target_id, edit_tail, reply, cap);
+    }
+    if (prefix_ci(body, "editar tarefa")) {
+        snprintf(reply, cap, "Use EDITAR TAREFA <id> | matéria: ... | título: ... | entrega: AAAA-MM-DD.");
+        return SUCCESS;
+    }
+    command = command_target_id(body, "editar lembrete", &target_id, &edit_tail);
+    if (command != 0) {
+        if (command < 0) {
+            snprintf(reply, cap, "Use EDITAR LEMBRETE <id>: novo texto do lembrete.");
+            return SUCCESS;
+        }
+        char new_content[2001];
+        if (strlen(edit_tail) > 2000) {
+            snprintf(reply, cap, "O novo texto do lembrete pode ter no máximo 2000 caracteres.");
+            return SUCCESS;
+        }
+        snprintf(new_content, sizeof new_content, "%s", edit_tail);
+        trim(new_content);
+        return teacher_prepare_notice_edit(sender_key, user.id, target_id,
+                                           new_content, reply, cap);
+    }
+    if (prefix_ci(body, "editar lembrete")) {
+        snprintf(reply, cap, "Use EDITAR LEMBRETE <id>: novo texto do lembrete.");
+        return SUCCESS;
+    }
+
+    if (prefix_ci(body, "cancelar")) {
+        teacher_pending_clear(sender_key, user.id);
+        snprintf(reply, cap, "Publicação pendente cancelada.");
+        return SUCCESS;
+    }
+    if (equal_ci(body, "editar")) {
+        teacher_pending_clear(sender_key, user.id);
         snprintf(reply, cap, "Rascunho descartado. Envie novamente os dados corrigidos.");
         return SUCCESS;
     }
     if (equal_ci(body, "sim") || equal_ci(body, "confirmar")) {
+        int pending_count = teacher_pending_count(sender_key);
+        if (pending_count < 0) {
+            snprintf(reply, cap, "Não consegui verificar as publicações pendentes.");
+            return SUCCESS;
+        }
+        if (pending_count > 1) {
+            snprintf(reply, cap, "Há mais de uma publicação pendente. Responda CANCELAR para limpar os rascunhos e envie novamente uma por vez.");
+            return SUCCESS;
+        }
+        if (has_task_edit && task_edit.user_id == user.id) {
+            teacher_confirm_task_edit(sender_key, user.id, &task_edit, reply, cap);
+            return SUCCESS;
+        }
+        if (has_notice_edit && notice_edit.user_id == user.id) {
+            teacher_confirm_notice_edit(sender_key, user.id, &notice_edit, reply, cap);
+            return SUCCESS;
+        }
         if (has_task) {
             Task saved;
             Class current_class;
@@ -1121,7 +1634,8 @@ static int teacher_whatsapp_message(const char *sender_key, int64_t user_id,
                 return SUCCESS;
             }
             if (db_begin() != SUCCESS) return ERROR_DATABASE;
-            if (db_prepare("INSERT INTO notices(author_id,class_id,title,content) VALUES(?,?,?,?);", &st) != SUCCESS) {
+            if (db_prepare("INSERT INTO notices(author_id,class_id,title,content,publish_date) "
+                           "VALUES(?,?,?,?,date('now','localtime'));", &st) != SUCCESS) {
                 (void)db_rollback(); return ERROR_DATABASE;
             }
             db_bind_int64(st, 1, (long long)user.id); db_bind_int64(st, 2, (long long)class_id);
@@ -1140,11 +1654,22 @@ static int teacher_whatsapp_message(const char *sender_key, int64_t user_id,
     }
 
     const char *colon = strchr(body, ':');
-    if (colon && (prefix_ci(body, "recado") || prefix_ci(body, "aviso") || prefix_ci(body, "comunicado"))) {
+    if (colon && (prefix_ci(body, "recado") || prefix_ci(body, "aviso") ||
+                  prefix_ci(body, "comunicado") || prefix_ci(body, "lembrete"))) {
+        int pending_count = teacher_pending_count(sender_key);
+        if (pending_count < 0) {
+            snprintf(reply, cap, "Não consegui verificar suas publicações pendentes.");
+            return SUCCESS;
+        }
+        if (pending_count > 0) {
+            snprintf(reply, cap, "Resolva a publicação pendente com SIM ou CANCELAR antes de iniciar outra.");
+            return SUCCESS;
+        }
         const char *content = colon + 1;
         while (*content && isspace((unsigned char)*content)) ++content;
         size_t keyword_len = prefix_ci(body, "recado") ? strlen("recado")
-            : prefix_ci(body, "aviso") ? strlen("aviso") : strlen("comunicado");
+            : prefix_ci(body, "aviso") ? strlen("aviso")
+            : prefix_ci(body, "lembrete") ? strlen("lembrete") : strlen("comunicado");
         const char *class_start = body + keyword_len;
         while (class_start < colon && isspace((unsigned char)*class_start)) ++class_start;
         size_t class_len = (size_t)(colon - class_start);
@@ -1159,7 +1684,7 @@ static int teacher_whatsapp_message(const char *sender_key, int64_t user_id,
         int class_match = class_reference[0]
             ? resolve_class_reference(class_reference, &classroom, options, sizeof options) : 0;
         if (!validation_length_between(content, 3, 2000) || class_match != 1) {
-            snprintf(reply, cap, "Use RECADO [nome da turma]: texto. Ex.: RECADO 9A: reunião amanhã.");
+            snprintf(reply, cap, "Use LEMBRETE [nome da turma]: texto. Ex.: LEMBRETE 9A: reunião amanhã.");
             return SUCCESS;
         }
         int64_t actual_teacher_id = 0;
@@ -1169,12 +1694,21 @@ static int teacher_whatsapp_message(const char *sender_key, int64_t user_id,
             snprintf(reply, cap, "Você não tem acesso a essa turma.");
             return SUCCESS;
         }
-        if (db_prepare("INSERT INTO pending_teacher_notices(from_ref,user_id,class_id,title,content) VALUES(?,?,?,'Recado',?) ON CONFLICT(from_ref) DO UPDATE SET user_id=excluded.user_id,class_id=excluded.class_id,title=excluded.title,content=excluded.content,updated_at=datetime('now');", &st) != SUCCESS)
+        const char *notice_title = prefix_ci(body, "recado") ? "Recado"
+            : prefix_ci(body, "aviso") ? "Aviso"
+            : prefix_ci(body, "comunicado") ? "Comunicado" : "Lembrete";
+        if (db_prepare("INSERT INTO pending_teacher_notices(from_ref,user_id,class_id,title,content) VALUES(?,?,?,?,?) ON CONFLICT(from_ref) DO NOTHING;", &st) != SUCCESS)
             return ERROR_DATABASE;
         db_bind_text(st, 1, sender_key); db_bind_int64(st, 2, (long long)user.id);
-        db_bind_int64(st, 3, (long long)classroom.id); db_bind_text(st, 4, content);
-        int ok = sqlite3_step(st) == SQLITE_DONE; sqlite3_finalize(st);
-        snprintf(reply, cap, "%s", ok ? "Prévia do recado para a turma. Responda SIM para publicar, EDITAR para descartar ou CANCELAR." : "Não consegui preparar o recado.");
+        db_bind_int64(st, 3, (long long)classroom.id); db_bind_text(st, 4, notice_title);
+        db_bind_text(st, 5, content);
+        int ok = sqlite3_step(st) == SQLITE_DONE && sqlite3_changes(database_get()) == 1;
+        sqlite3_finalize(st);
+        snprintf(reply, cap, "%s", ok
+            ? (strcmp(notice_title, "Lembrete") == 0
+                ? "Prévia do lembrete para a turma. Responda SIM para publicar ou CANCELAR para descartar."
+                : "Prévia do recado para a turma. Responda SIM para publicar ou CANCELAR para descartar.")
+            : "Não consegui preparar o recado ou lembrete.");
         return SUCCESS;
     }
 
@@ -1199,7 +1733,7 @@ int whatsapp_receive_anonymous_message(const char *from_ref, const char *body,
         while (*code == ' ' || *code == '\t' || *code == ':' || *code == '-') ++code;
         int link_rc = anonymous_teacher_link_claim(from_ref, code);
         if (link_rc == SUCCESS) {
-            snprintf(reply, cap, "WhatsApp vinculado ao seu cadastro de professor. Agora envie a tarefa ou recado com a turma.");
+            snprintf(reply, cap, "WhatsApp vinculado ao seu cadastro de professor. Envie AJUDA para ver como criar e editar tarefas e lembretes.");
         } else if (link_rc == ERROR_NOT_FOUND || link_rc == ERROR_FORBIDDEN || link_rc == ERROR_CONFLICT) {
             snprintf(reply, cap, "Código inválido, expirado ou já utilizado. Gere outro código no SAE e envie: VINCULAR <código>.");
         } else {

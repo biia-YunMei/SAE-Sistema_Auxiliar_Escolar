@@ -73,6 +73,8 @@ static void help_plain(void)
     puts("TAREFAS (COORD e PROF)");
     puts("  sae tarefa criar|listar|editar|excluir");
     puts("MENSAGENS (API escolar externa: somente resposta a mensagem recebida)");
+    puts("  sae whatsapp vincular (professor logado; código válido por 10 minutos)");
+    puts("  sae whatsapp desvincular (remove o WhatsApp da conta de professor logada)");
     puts("  sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM");
     puts("  sae whatsapp turma -c ID_TURMA -m MENSAGEM (indisponível nesta API)");
     puts("API ESCOLAR (somente whoami, inbox, reply e ref)");
@@ -120,6 +122,10 @@ static void help(void)
     puts("│     Alunos podem apenas listar tarefas da própria turma.                       │");
     puts("│                                                                                │");
     puts("├─────────────── MENSAGENS (API ESCOLAR EXTERNA) ────────────────────────────────┤");
+    puts("│     sae whatsapp vincular                                                      │");
+    puts("│     Gera código de vínculo para o professor logado (validade: 10 min).         │");
+    puts("│     sae whatsapp desvincular                                                   │");
+    puts("│     Remove o vínculo da conta de professor autenticada.                        │");
     puts("│     sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM                             │");
     puts("│     Responde uma mensagem recebida; o ID tem formato m_...                     │");
     puts("│     sae whatsapp turma não está disponível: a API não oferece envio em massa.  │");
@@ -589,6 +595,12 @@ static void print_response(const char *response)
         return;
     }
     if (strstr(response, "\"status\":\"sent\"")) { print_success("Mensagem enviada com sucesso."); return; }
+    if (strstr(response, "\"status\":\"unlinked\"")) {
+        print_success(strstr(response, "\"was_linked\":true")
+            ? "WhatsApp desvinculado. Publicações pendentes foram descartadas."
+            : "Esta conta não tinha um WhatsApp vinculado.");
+        return;
+    }
     if (strstr(response, "\"status\":\"assigned\"")) { print_success("Aluno vinculado à turma com sucesso."); return; }
     if (strstr(response, "\"message\":\"user updated\"")) { print_success("Usuário atualizado com sucesso."); return; }
     if (strstr(response, "\"message\":\"user deleted\"")) { print_success("Usuário excluído com sucesso."); return; }
@@ -656,6 +668,53 @@ static int call(const char *method, const char *path, const char *body)
     print_response(response);
     if (strstr(response, "\"error\":401")) return ERROR_UNAUTHORIZED;
     if (strstr(response, "\"error\":")) return ERROR_HTTP;
+    return SUCCESS;
+}
+
+static int whatsapp_teacher_link(void)
+{
+    char token[80], response[4096], code[32] = {0}, message[32] = {0};
+    if (!token_load(token, sizeof token)) {
+        print_error_message("Faça login com a conta do professor: sae login -p TELEFONE.");
+        return ERROR_UNAUTHORIZED;
+    }
+    if (!request("POST", "/api/whatsapp/teacher-link-code", "", response, sizeof response)) {
+        print_error_message("Não foi possível falar com o servidor. Inicie com: sae servidor");
+        return ERROR_NETWORK;
+    }
+    if (strstr(response, "\"error\":")) {
+        print_response(response);
+        return strstr(response, "\"error\":401") ? ERROR_UNAUTHORIZED : ERROR_HTTP;
+    }
+    if (!json_value(response, "code", code, sizeof code) || strlen(code) != 16 ||
+        !json_value(response, "expires_in_minutes", message, 16)) {
+        print_error_message("O servidor retornou uma resposta inválida ao gerar o vínculo.");
+        return ERROR_HTTP;
+    }
+    char *minutes_end = NULL;
+    errno = 0;
+    long minutes = strtol(message, &minutes_end, 10);
+    if (errno == ERANGE || !minutes_end || *minutes_end || minutes < 1 || minutes > 10) {
+        print_error_message("O servidor retornou um prazo de validade inválido.");
+        return ERROR_HTTP;
+    }
+    static const char alphabet[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    for (size_t i = 0; i < 16; ++i) {
+        if (!strchr(alphabet, code[i])) {
+            print_error_message("O servidor retornou um código de vínculo inválido.");
+            return ERROR_HTTP;
+        }
+    }
+    char link_message[32];
+    int n = snprintf(link_message, sizeof link_message, "VINCULAR %s", code);
+    if (n < 0 || (size_t)n >= sizeof link_message) return ERROR_TOO_LONG;
+    print_record_begin("VÍNCULO DO WHATSAPP");
+    print_record_field("Envie:", link_message);
+    print_record_field("Enviar para:", "(66) 99669-5016");
+    char expiration[48];
+    (void)snprintf(expiration, sizeof expiration, "válido por %ld minutos, uso único", minutes);
+    print_record_field("Validade:", expiration);
+    print_record_end();
     return SUCCESS;
 }
 
@@ -900,6 +959,10 @@ int cli_run(int argc, char **argv)
         return call("DELETE", a, "");
     }
     if (!strcmp(argv[1], "whatsapp") && argc >= 3) {
+        if (!strcmp(argv[2], "vincular") && argc == 3)
+            return whatsapp_teacher_link();
+        if (!strcmp(argv[2], "desvincular") && argc == 3)
+            return call("DELETE", "/api/whatsapp/teacher-link", "");
         if (!strcmp(argv[2], "enviar") && i && m)
             return escola_api_reply(i, m);
         if (!strcmp(argv[2], "turma")) {
@@ -907,7 +970,7 @@ int cli_run(int argc, char **argv)
                   "ela não oferece envio por telefone nem envio para turma.\n", stderr);
             return ERROR_NOT_IMPLEMENTED;
         }
-        fputs("Use: sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM\n"
+        fputs("Use: sae whatsapp vincular | sae whatsapp enviar -i ID_DA_INBOX -m MENSAGEM\n"
               "O ID deve ser m_... e vir de `sae escola inbox`.\n", stderr);
         return ERROR_INVALID_INPUT;
     }

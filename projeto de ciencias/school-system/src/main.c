@@ -73,6 +73,7 @@ static const Route g_routes[] = {
     { "GET",  "/api/messages",                    ctrl_messages_list      },
     { "POST", "/api/anonymous/enrollment-codes",   ctrl_anonymous_enrollment_code },
     { "POST", "/api/whatsapp/teacher-link-code",  ctrl_whatsapp_teacher_link_code },
+    { "DELETE", "/api/whatsapp/teacher-link",    ctrl_whatsapp_teacher_unlink },
 
     { "GET",  "/api/classes",                      ctrl_classes_list       },
     { "POST", "/api/classes",                      ctrl_classes_create     },
